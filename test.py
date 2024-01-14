@@ -12,10 +12,14 @@ import aiohttp_chromium as aiohttp
 
 async def main():
     print("aiohttp.ClientSession")
+    cookie_jar = aiohttp.MozillaCookieJar("cookies.txt")
+    print("loading cookies.txt")
+    cookie_jar.load()
     args = dict(
         _chromium_extensions = [
             #"Ublock", # FIXME slow init
         ],
+        cookie_jar = cookie_jar,
     )
     async with aiohttp.ClientSession(**args) as session:
         print("session.get")
@@ -38,5 +42,8 @@ async def main():
             """
 
         #print("sleep outter"); await asyncio.sleep(2)
+
+    print("saving cookies.txt")
+    cookie_jar.save()
 
 asyncio.run(main())

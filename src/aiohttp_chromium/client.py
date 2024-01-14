@@ -601,7 +601,7 @@ class ClientSession(aiohttp.ClientSession):
             #vnc_client_list=[],
             #ssh_id_file_path=None,
 
-            cookie_jar = [],
+            cookie_jar = None,
 
             # if tempdir == None, then this will use tempfile.mkdtemp()
             # if tempdir != None
@@ -966,15 +966,16 @@ class ClientSession(aiohttp.ClientSession):
         # preload cookies before first request
         # https://stackoverflow.com/a/63220249/10440128
         # Network.enable is needed for Network.setCookie
-        await driver.execute_cdp_cmd('Network.enable', {})
-        for cookie in self.cookie_jar:
-            logger.debug("_start_chromium: adding cookie " + repr(cookie))
-            # Fix issue Chrome exports 'expiry' key but expects 'expire' on import
-            if 'expiry' in cookie:
-                cookie['expires'] = cookie['expiry']
-                del cookie['expiry']
-            await driver.execute_cdp_cmd('Network.setCookie', cookie)
-        await driver.execute_cdp_cmd('Network.disable', {})
+        if self.cookie_jar:
+            await driver.execute_cdp_cmd('Network.enable', {})
+            for cookie in self.cookie_jar:
+                logger.debug("_start_chromium: adding cookie " + repr(cookie))
+                # Fix issue Chrome exports 'expiry' key but expects 'expire' on import
+                if 'expiry' in cookie:
+                    cookie['expires'] = cookie['expiry']
+                    del cookie['expiry']
+                await driver.execute_cdp_cmd('Network.setCookie', cookie)
+            await driver.execute_cdp_cmd('Network.disable', {})
 
         for ext in self._chromium_extensions:
             await ext.post_start()
@@ -1478,6 +1479,11 @@ class ClientSession(aiohttp.ClientSession):
 
         # called by self.__aexit__
         #debug_callstack("ClientSession.close")
+
+        # update cookie_jar
+        if self.cookie_jar:
+            self.cookie_jar.clear()
+            self.cookie_jar.extend(await self._driver.get_cookies())
 
         # close all windows
         logger.debug(f"ClientSession.close: selenium_driver.quit")

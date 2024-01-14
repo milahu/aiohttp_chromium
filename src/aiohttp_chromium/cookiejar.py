@@ -47,9 +47,29 @@ class MozillaCookieJar(list):
     """
 
 
-    def load(self, file_path: PathLike):
+    _file_path = None
 
-        file_path = Path(file_path)
+
+    def __init__(self, file_path: PathLike = None):
+
+        super().__init__()
+
+        if file_path != None:
+            self._file_path = file_path
+
+
+    def load(self, file_path: PathLike = None):
+
+        if file_path != None:
+            self._file_path = file_path
+
+        assert self._file_path != None
+
+        file_path = Path(self._file_path)
+
+        if not file_path.exists():
+            # TODO? raise FileNotFoundError
+            return
 
         jar_1 = http.cookiejar.MozillaCookieJar()
         jar_1.load(file_path)
@@ -80,7 +100,12 @@ class MozillaCookieJar(list):
         del jar_1
 
 
-    def save(self, file_path: PathLike) -> None:
+    def save(self, file_path: PathLike = None) -> None:
+
+        if file_path == None:
+            file_path = self._file_path
+
+        assert file_path != None
 
         file_path = Path(file_path)
 
