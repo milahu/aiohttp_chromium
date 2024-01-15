@@ -128,6 +128,8 @@ else:
 # CIMultiDictProxy is used for resp.headers
 from multidict import CIMultiDict, CIMultiDictProxy, MultiDict, MultiDictProxy
 
+from yarl import URL
+
 
 
 from . import extensions
@@ -221,11 +223,11 @@ class _RequestContextManager(_BaseRequestContextManager[ClientResponse]):
     __slots__ = ()
 
     async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[TracebackType],
-    ) -> None:
+            self,
+            exc_type: Optional[Type[BaseException]],
+            exc: Optional[BaseException],
+            tb: Optional[TracebackType],
+        ) -> None:
         # We're basing behavior on the exception as it can be caused by
         # user code unrelated to the status of the connection.  If you
         # would like to close a connection you must do that
@@ -260,6 +262,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
             _content,
             _filename,
             _filepath,
+            _download_is_complete,
         ) -> None:
 
         #self.session = session
@@ -287,6 +290,9 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         # actual downloaded file
         # basename is response_guid
         self._filepath = _filepath
+
+        # TODO event ...
+        self._download_is_complete = _download_is_complete
 
         self._is_file = _filepath != None
 
@@ -350,11 +356,11 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
 
     async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
+            self,
+            exc_type: Optional[Type[BaseException]],
+            exc_val: Optional[BaseException],
+            exc_tb: Optional[TracebackType],
+        ) -> None:
         # similar to _RequestContextManager, we do not need to check
         # for exceptions, response object can close connection
         # if state is broken
@@ -454,6 +460,28 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         return self._content.decode(self.content_encoding)
     """
 
+
+
+    async def _wait_complete(self, timeout=60):
+
+        """
+        wait until download is complete
+        """
+
+        if not self._filepath:
+            return True
+
+        return self._download_is_complete
+
+        # FIXME implement timeout
+
+        # TODO better
+        # wait for "download completed" event
+
+        raise NotImplementedError
+
+
+
     def release(self):
         # moved to: async def wait_for_close
         #logger.debug(f"ClientResponse.release: noop")
@@ -478,6 +506,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         self._session._old_driver_windows.append(self._driver_window)
 
         if self._content:
+            # FIXME AttributeError: 'StreamReader' object has no attribute 'close'
             self._content.close()
         if self._filepath:
             # delete tempfile
@@ -1074,45 +1103,90 @@ class ClientSession(aiohttp.ClientSession):
         # https://github.com/chromedp/chromedp/issues/1044
         # https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-navigate
 
+        expected_request_id = None
+
+        request_url_by_id = dict()
+
         async def requestWillBeSent(args):
+            nonlocal expected_request_id
             request_url = args["request"]["url"]
             # TODO use request_id for logging
             request_id = args["requestId"]
+            request_url_by_id[request_id] = request_url
             if request_url != expected_url:
                 # this can be REALLY verbose...
-                #logger.debug(f"ignoring request to {repr(request_url)} != {repr(expected_url)}")
+                if ignore_url(request_url):
+                    return
+                #logger.debug(f"requestWillBeSent: ignoring request to {repr(request_url)} != {repr(expected_url)}")
+                logger.debug(f"requestWillBeSent {request_id} {request_url}")
                 return
+            logger.debug(f"requestWillBeSent {request_id} {request_url} setting expected_request_id")
+            expected_request_id = request_id
             # TODO? wait until all requests have a response
             # aka "networkIdle"
             #return
-            #logger.debug(f"requestWillBeSent {args}")
+            #logger.debug(f"requestWillBeSent {json.dumps(args, indent=2)}")
             #logger.debug(f"requestWillBeSent: " + json.dumps(args, indent=2))
-            logger.debug(f"requestWillBeSent " + args["request"]["url"])
+            logger.debug(f"requestWillBeSent {request_id} {request_url}")
 
         async def requestWillBeSentExtraInfo(args):
-            logger.debug(f"requestWillBeSentExtraInfo {args}")
+            request_id = args["requestId"]
+            request_url = request_url_by_id[request_id]
+            logger.debug(f"requestWillBeSentExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
+
+        def ignore_url(url):
+            if url.startswith("chrome-extension://"):
+                return True
+            if url.startswith("data:image/png;base64,"):
+                return True
+            if url.startswith("https://cdn.jsdelivr.net/"):
+                return True
+            if url.startswith("https://www.recaptcha.net/"):
+                return True
+            if url.startswith("https://www.gstatic.com/recaptcha/"):
+                return True
+            if url.startswith("https://www.googletagmanager.com/"):
+                return True
+            if url.startswith("https://cdn.perfops.net/"):
+                return True
+            if url.startswith("https://static.opensubtitles.org/"):
+                return True
+            if url.startswith("https://www.opensubtitles.org/addons/get_user_info.php"):
+                return True
+            if url.startswith("https://www.opensubtitles.org/cdn-cgi/scripts/"):
+                return True
+            if url.startswith("https://ads1.opensubtitles.org/"):
+                return True
+            return False
 
         async def responseReceived(args):
             nonlocal url
             nonlocal response_data
             #nonlocal response_body
             nonlocal response_queue
+            nonlocal response_done
             # TODO better. get target of this response
             nonlocal target
-            #logger.debug(f"responseReceived {args}")
+            #logger.debug(f"responseReceived {json.dumps(args, indent=2)}")
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
+            request_id = args["requestId"]
+            request_url = request_url_by_id[request_id]
 
             # FIXME make the url check more loose
             # http == https
             if response_url != expected_url:
                 # this can be REALLY verbose...
-                #logger.debug(f"ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
+                if ignore_url(response_url):
+                    return
+                logger.debug(f"responseReceived: ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
+                logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
                 return
 
-            # FIXME ignoring response 200 from https://nowsecure.nl/
+            response_done = True
 
             logger.debug(f"responseReceived: status {response_status}: url {response_url}")
+            logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
 
             #response_type = args["response"]["headers"]["Content-Type"]
 
@@ -1201,7 +1275,38 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"responseReceived {response_status} {response_url} {response_type} " + repr(response_body[:20]) + "...")
 
         async def responseReceivedExtraInfo(args):
-            logger.debug(f"responseReceivedExtraInfo {args}")
+            nonlocal expected_request_id
+            nonlocal expected_url
+            request_id = args["requestId"]
+            # FIXME how dow we know request_url_by_id[request_id]
+            # -> requestWillBeSent
+            # but url can be missing!
+            request_url = request_url_by_id.get(request_id)
+            if expected_request_id:
+                if request_id != expected_request_id:
+                    return
+            elif request_url:
+                # filter by url
+                if request_url != expected_url:
+                    return
+                expected_request_id = request_id
+            logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
+            #logger.debug(f"responseReceivedExtraInfo {request_id} FIXME parse location header")
+            # TODO are these dict keys always lowercase?
+            location = args["headers"].get("location")
+            if location:
+                new_expected_url = str(URL(expected_url).join(URL(location)))
+                if expected_url != new_expected_url:
+                    logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} changing expected_url from {expected_url} to {new_expected_url}")
+                    expected_url = new_expected_url
+                    # reverse lookup from url to id
+                    # https://stackoverflow.com/a/2569076/10440128
+                    # mostly None ...
+                    new_expected_request_id = next((id for id, url in request_url_by_id.items() if url == expected_url), None)
+                    logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} changing expected_request_id from {expected_request_id} to {new_expected_request_id}")
+                    expected_request_id = new_expected_request_id
+                else:
+                    raise NotImplementedError(f"noop redirect from url {expected_url} to location {location}")
 
         response_guid = None
         response_done = False
@@ -1216,14 +1321,15 @@ class ClientSession(aiohttp.ClientSession):
             #response_filepath = self._downloads_path + "/" + response_guid
             #response_done = False
             url = args["url"]
+            guid = args["guid"]
             if url != expected_url:
                 # ignore this event
+                #logger.debug(f"downloadWillBegin: ignoring download from {repr(url)} != {repr(expected_url)}")
                 return
                 # FIXME why? is expected_url a static variable?
-                logger.debug(f"downloadWillBegin: args {args}")
+                logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
                 raise Exception(f"downloadWillBegin: unexpected url: {url} != {expected_url}")
 
-            guid = args["guid"]
             if response_guid:
                 if guid != response_guid:
                     # FIXME why? is response_guid a static variable?
@@ -1234,11 +1340,11 @@ class ClientSession(aiohttp.ClientSession):
                 #return
             response_guid = guid
 
-            #logger.debug(f"downloadWillBegin: args {args}")
+            #logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
 
             response_filename = args["suggestedFilename"]
             if not response_filename:
-                logger.debug(f"downloadWillBegin: args {args}")
+                logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
                 raise Exception(f"downloadWillBegin: empty response_filename: {repr(response_filename)}")
 
             logger.debug(f"downloadWillBegin: {guid} -> {response_filename}")
@@ -1246,7 +1352,8 @@ class ClientSession(aiohttp.ClientSession):
             # wait some time for download to complete
 
             # FIXME on "downloadProgress: completed", stop waiting in downloadWillBegin
-            for i in range(10):
+            #for i in range(10):
+            for i in range(60):
                 await asyncio.sleep(1)
                 if response_done:
                     logger.debug(f"downloadWillBegin: download done")
@@ -1276,10 +1383,11 @@ class ClientSession(aiohttp.ClientSession):
             if response_done:
                 # downloadProgress event is fired many many times after state completed
                 return
-            #logger.debug(f"downloadProgress: args {args}")
             guid = args["guid"]
+            #logger.debug(f"downloadProgress {guid} {json.dumps(args, indent=2)}")
             if guid != response_guid:
                 # ignore
+                #logger.debug(f"downloadProgress: ignoring download {repr(guid)} != {repr(response_guid)}")
                 return
                 raise Exception(f"downloadProgress: unexpected guid: {guid} != {response_guid}")
             state = args["state"]
@@ -1302,21 +1410,40 @@ class ClientSession(aiohttp.ClientSession):
                 response_received = received
             # FIXME handle failed downloads
             else:
-                logger.debug(f"downloadProgress: args {args}")
+                logger.debug(f"downloadProgress {guid} {json.dumps(args, indent=2)}")
                 raise NotImplementedError(f"downloadProgress: FIXME handle download state {state}")
 
         async def targetCreated(args):
             # this is called on creation of iframe, frame, tab, ...
             return
-            logger.debug(f"targetCreated {args}")
+            logger.debug(f"targetCreated {json.dumps(args, indent=2)}")
 
         async def targetInfoChanged(args):
             return
-            #logger.debug(f"targetInfoChanged {args}")
+            #logger.debug(f"targetInfoChanged {json.dumps(args, indent=2)}")
             logger.debug("targetInfoChanged")
+
+        async def requestIntercepted(params):
+            nonlocal target
+            print("requestIntercepted", args)
+            url = params["request"]["url"]
+            _params = {"interceptionId": params['interceptionId']}
+            #if params.get('responseStatusCode') in [301, 302, 303, 307, 308]:
+            if False:
+                # redirected request
+                return await target.execute_cdp_cmd("Network.continueInterceptedRequest", _params)
+            fulfill_params = {"headers":params["request"]["headers"]}
+            fulfill_params["headers"]["test"] = "Hello World!"
+            fulfill_params.update(_params)
+            await target.execute_cdp_cmd("Network.continueInterceptedRequest", fulfill_params)
+            print(url)
 
         target = await driver.current_target
         #logger.debug(f"target.id {target.id}")
+
+        # TODO? add cdp listeners only once
+        # once per session?
+        # once per driver window?
 
         # enable Target events
         args = {
@@ -1338,9 +1465,16 @@ class ClientSession(aiohttp.ClientSession):
         await target.execute_cdp_cmd("Network.enable", args)
 
         await target.add_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
-        #await target.add_cdp_listener("Network.requestWillBeSentExtraInfo", requestWillBeSentExtraInfo)
         await target.add_cdp_listener("Network.responseReceived", responseReceived)
-        #await target.add_cdp_listener("Network.responseReceivedExtraInfo", responseReceivedExtraInfo)
+
+        listen_extra_infos_request = False
+        listen_extra_infos_response = True
+
+        if listen_extra_infos_request:
+            await target.add_cdp_listener("Network.requestWillBeSentExtraInfo", requestWillBeSentExtraInfo)
+
+        if listen_extra_infos_response:
+            await target.add_cdp_listener("Network.responseReceivedExtraInfo", responseReceivedExtraInfo)
 
         # NOTE these CDP commands must be sent to base_target
         base_target = await driver.base_target
@@ -1352,6 +1486,22 @@ class ClientSession(aiohttp.ClientSession):
         await base_target.execute_cdp_cmd("Browser.setDownloadBehavior", args)
         await base_target.add_cdp_listener("Browser.downloadWillBegin", downloadWillBegin)
         await base_target.add_cdp_listener("Browser.downloadProgress", downloadProgress)
+
+
+
+        if False:
+
+            # intercept requests
+
+            args = {
+                "patterns": [{"urlPattern": "*"}],
+                #"interceptionStage": "HeadersReceived",
+            }
+            await target.execute_cdp_cmd("Network.setRequestInterception", args)
+
+            await target.add_cdp_listener("Network.requestIntercepted", requestIntercepted)
+
+
 
         # generic exception handler to cleanup timeout_handle
         try:
@@ -1421,6 +1571,28 @@ class ClientSession(aiohttp.ClientSession):
                     # found a "good" response
                     break
 
+
+
+                # remove event listeners
+                # TODO also Network.disable etc?
+
+                await target.remove_cdp_listener("Target.targetCreated", targetCreated)
+                await target.remove_cdp_listener("Target.targetInfoChanged", targetInfoChanged)
+
+                await target.remove_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
+                await target.remove_cdp_listener("Network.responseReceived", responseReceived)
+
+                if listen_extra_infos_request:
+                    await target.remove_cdp_listener("Network.requestWillBeSentExtraInfo", requestWillBeSentExtraInfo)
+
+                if listen_extra_infos_response:
+                    await target.remove_cdp_listener("Network.responseReceivedExtraInfo", responseReceivedExtraInfo)
+
+                await base_target.remove_cdp_listener("Browser.downloadWillBegin", downloadWillBegin)
+                await base_target.remove_cdp_listener("Browser.downloadProgress", downloadProgress)
+
+
+
                 # TODO better?
                 (response_data, response_body, response_filename, response_guid) = response_item
 
@@ -1434,6 +1606,14 @@ class ClientSession(aiohttp.ClientSession):
                 response_filepath = None
                 if response_guid:
                     response_filepath = self._downloads_path + "/" + response_guid
+
+                # FIXME event ...
+                # also return incomplete response objects and pass an asyncio event
+                # so consumers can wait until the response is completed
+                # -> _wait_complete
+                # FIXME
+                assert response_done == True
+                download_is_complete = True
 
                 resp = ClientResponse(
                     method,
@@ -1460,6 +1640,7 @@ class ClientSession(aiohttp.ClientSession):
                     _content=response_body,
                     _filename=response_filename,
                     _filepath=response_filepath,
+                    _download_is_complete=download_is_complete,
                 )
 
                 return resp
