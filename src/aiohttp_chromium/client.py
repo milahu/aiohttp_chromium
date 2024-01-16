@@ -1,3 +1,5 @@
+# FIXME detect when chromium tabs or windows are closed manually
+
 # python stdlib modules
 import sys
 import os
@@ -683,8 +685,10 @@ class ClientSession(aiohttp.ClientSession):
             "XAUTHORITY",
             # use color scheme of the main display
             # light mode or dark mode
+            # NOTE dbus can fail: org.freedesktop.DBus.Error.UnknownMethod: No such interface “org.freedesktop.portal.Settings” on object at path /org/freedesktop/portal/desktop
+            # quickfix: set GTK_THEME=Breeze-Dark
             "DBUS_SESSION_BUS_ADDRESS", # /run/user/1000/bus
-            "XDG_DATA_DIRS",
+            "XDG_DATA_DIRS", # /themes/Breeze-Dark
             "GTK_THEME",
             "QT_QPA_PLATFORMTHEME",
             "QT_STYLE_OVERRIDE",
@@ -698,6 +702,7 @@ class ClientSession(aiohttp.ClientSession):
             tempdir = tempfile.mkdtemp(prefix="aiohttp_chromium.")
             self._cleanup_remove_files.append(tempdir)
         self.tempdir = tempdir
+        logger.debug(f"ClientSession: using tempdir {self.tempdir}")
 
         self.temp_home = f"{self.tempdir}/home"
         os.makedirs(self.temp_home, exist_ok=True)
@@ -724,6 +729,11 @@ class ClientSession(aiohttp.ClientSession):
                 self._environ[key] = os.environ[key]
 
         # force dark mode
+        # workaround for "dbus can fail"
+        # TODO install Breeze-Dark theme to cache, to make this portable
+        # TODO expose option for darkmode
+        self._environ["GTK_THEME"] = "Breeze-Dark"
+
         """
         # chromium detects darkmode from gtk theme or from qt theme
         # https://wiki.archlinux.org/title/Dark_mode_switching
@@ -797,6 +807,8 @@ class ClientSession(aiohttp.ClientSession):
 
         self._chromium_user_data_dir = f"{self.tempdir}/chromium-user-data"
         os.makedirs(self._chromium_user_data_dir)
+
+        logger.debug(f"ClientSession: using chromium user-data-dir {self._chromium_user_data_dir}")
 
         # FIXME shutil.rmtree fails to delete "chmod 0600" files
         # OSError: [Errno 39] Directory not empty: 'Default'
@@ -913,7 +925,7 @@ class ClientSession(aiohttp.ClientSession):
         # write chromium config file
         self._chromium_config_path = self._chromium_user_data_dir + "/Default/Preferences"
         logger.debug(f"writing chromium config file: {self._chromium_config_path}")
-        os.makedirs(self._chromium_user_data_dir + "/Default")
+        os.makedirs(self._chromium_user_data_dir + "/Default", exist_ok=True)
         with open(self._chromium_config_path, "w") as f:
             json.dump(self._chromium_config, f, indent=2)
 
@@ -1149,6 +1161,9 @@ class ClientSession(aiohttp.ClientSession):
                 return True
             if url.startswith("https://cdn.perfops.net/"):
                 return True
+            if url.startswith("https://z-na.amazon-adsystem.com/"):
+                return True
+
             if url.startswith("https://static.opensubtitles.org/"):
                 return True
             if url.startswith("https://www.opensubtitles.org/addons/get_user_info.php"):
@@ -1157,6 +1172,9 @@ class ClientSession(aiohttp.ClientSession):
                 return True
             if url.startswith("https://ads1.opensubtitles.org/"):
                 return True
+            if url.startswith("https://toplist.cz/"):
+                return True
+
             return False
 
         async def responseReceived(args):
@@ -1180,13 +1198,13 @@ class ClientSession(aiohttp.ClientSession):
                 if ignore_url(response_url):
                     return
                 logger.debug(f"responseReceived: ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
-                logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
+                #logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
                 return
 
             response_done = True
 
             logger.debug(f"responseReceived: status {response_status}: url {response_url}")
-            logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
+            #logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
 
             #response_type = args["response"]["headers"]["Content-Type"]
 
@@ -1251,6 +1269,10 @@ class ClientSession(aiohttp.ClientSession):
             # TODO better
             # fix: No data found for resource with given identifier
             await asyncio.sleep(2)
+
+            # FIXME this can hang, producing a TimeoutError
+            # better use Network.takeResponseBodyForInterceptionAsStream
+            # instead of Network.getResponseBody
 
             logger.debug(f"responseReceived: Network.getResponseBody ...")
             args = {
@@ -1665,6 +1687,9 @@ class ClientSession(aiohttp.ClientSession):
         if self.cookie_jar:
             self.cookie_jar.clear()
             self.cookie_jar.extend(await self._driver.get_cookies())
+
+        for ext in self._chromium_extensions:
+            await ext.close()
 
         # close all windows
         logger.debug(f"ClientSession.close: selenium_driver.quit")

@@ -30,7 +30,12 @@ class ChromiumExtension:
         self.cachedir = f"{self.session._extensions_cache_path}/{self.name}"
         self.path = f"{self.session._extensions_path}/{self.name}"
 
-        self.log(f"init done")
+        self.id = get_extension_id(self.path)
+
+        self.settings_cache = f"{self.session._extensions_cache_path}/{self.name}/settings"
+        self.settings_path = f"{self.session._chromium_user_data_dir}/Default/Local Extension Settings/{self.id}"
+
+        self.log(f"init done: path: {self.path} id: {self.id}")
 
     def __await__(self):
 
@@ -41,15 +46,15 @@ class ChromiumExtension:
         if os.path.exists(self.path):
             return
 
-        await self.pre_download()
         await self.download()
-        await self.post_download()
 
-        await self.pre_unpack()
         await self.unpack()
-        await self.post_unpack()
 
-        self.id = get_extension_id(self.path)
+        await self.fix_path()
+
+        await self.patch()
+
+        await self.load_state()
 
         self.session._chromium_options.add_argument(f"--load-extension={self.path}")
 
@@ -60,13 +65,11 @@ class ChromiumExtension:
 
         return self
 
-    async def pre_download(self):
+    async def close(self):
 
-        pass
+        await self.save_state()
 
-    async def post_download(self):
-
-        pass
+        self.log(f"close done")
 
     async def download(self):
 
@@ -99,22 +102,6 @@ class ChromiumExtension:
         if sha256 != source_sha256:
             raise Exception(f"invalid cache file: {self.cache_filepath}. checksum mismatch: {sha256} != {source_sha256}")
 
-    async def pre_unpack(self):
-
-        pass
-
-    async def post_unpack(self):
-
-        # find manifest.json
-        # fix self.path
-        if os.path.exists(f"{self.path}/manifest.json"):
-            return
-        path_files = os.listdir(self.path)
-        if len(path_files) == 1:
-            self.path += "/" + path_files[0]
-        if not os.path.exists(f"{self.path}/manifest.json"):
-            raise Exception(f"no manifest.json in {self.path}")
-
     async def unpack(self):
 
         if self.cache_filepath[-4:].lower() == ".zip":
@@ -125,6 +112,41 @@ class ChromiumExtension:
         # TODO extract tar.gz archives
 
         raise NotImplementedError(f"unpack file {self.cache_filepath}")
+
+    async def fix_path(self):
+
+        # find manifest.json
+        # fix self.path
+        if os.path.exists(f"{self.path}/manifest.json"):
+            return
+        path_files = os.listdir(self.path)
+        if len(path_files) == 1:
+            # no. changing path would change id
+            #self.path += "/" + path_files[0]
+            os.rename(self.path, self.path + ".tmp")
+            os.rename(self.path + ".tmp/" + path_files[0], self.path)
+            os.rmdir(self.path + ".tmp")
+        if not os.path.exists(f"{self.path}/manifest.json"):
+            raise Exception(f"no manifest.json in {self.path}")
+
+    async def patch(self):
+
+        pass
+
+    async def load_state(self):
+
+        if os.path.exists(self.settings_cache):
+            self.log(f"load_state: loading settings from {self.settings_cache}")
+            os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
+            shutil.copytree(self.settings_cache, self.settings_path)
+
+    async def save_state(self):
+
+        if os.path.exists(self.settings_path):
+            self.log(f"save_state: saving settings to {self.settings_cache}")
+            os.makedirs(os.path.dirname(self.settings_cache), exist_ok=True)
+            # FIXME use "rsync" to reduce disk writes
+            shutil.copytree(self.settings_path, self.settings_cache)
 
     async def pre_start(self):
 
@@ -238,16 +260,19 @@ class Ublock(ChromiumExtension):
         "sha256": "00cec043e4e30e758a9d8194a018121ac689345fde4d4d02baaac60b954f2d7d",
     }
 
-    async def post_start(self):
+    async def patch(self):
 
-        # wait for ublock extension to download block lists
-        # before making any requests
-        # TODO cache the downloaded block lists to avoid this sleep
-        # TODO dynamic sleep
-        self.log(f"waiting for ublock extension to download block lists")
-        await asyncio.sleep(20)
-
-
+        self.log(f"patch: patching /js/background.js")
+        # TODO refactor patching of files
+        with open(self.path + "/js/background.js", "r") as f:
+            text = f.read()
+        # enable: Suspend network activity until all filter lists are loaded
+        text = text.replace(
+            "suspendUntilListsAreLoaded: vAPI.Net.canSuspend(),",
+            "suspendUntilListsAreLoaded: true,",
+        )
+        with open(self.path + "/js/background.js", "w") as f:
+            f.write(text)
 
 class Buster(ChromiumExtension):
 
