@@ -24,6 +24,7 @@ import shlex
 import shutil
 import tempfile
 import cgi
+import io
 import _io
 import string
 import itertools
@@ -428,6 +429,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                 # open -> io.BufferedReader
                 # FIXME handle missing file
                 # FIXME handle incomplete file
+                # FIXME remove open
                 self._content = open(self._filepath, "rb")
             else:
                 if self._body is None:
@@ -508,8 +510,15 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         self._session._old_driver_windows.append(self._driver_window)
 
         if self._content:
-            # FIXME AttributeError: 'StreamReader' object has no attribute 'close'
-            self._content.close()
+            # FIXME remove open
+            if isinstance(self._content, io.BufferedReader):
+                # open(file_path, "rb")
+                self._content.close()
+            #elif isinstance(self._content, io.TextIOWrapper):
+            #    # open(file_path, "r")
+            #    self._content.close()
+            elif isinstance(self._content, StreamReader):
+                del self._content
         if self._filepath:
             # delete tempfile
             try:
@@ -1125,15 +1134,24 @@ class ClientSession(aiohttp.ClientSession):
             # TODO use request_id for logging
             request_id = args["requestId"]
             request_url_by_id[request_id] = request_url
-            if request_url != expected_url:
-                # this can be REALLY verbose...
-                if ignore_url(request_url):
+            if expected_request_id:
+                # filter by request_id
+                if request_id != expected_request_id:
                     return
-                #logger.debug(f"requestWillBeSent: ignoring request to {repr(request_url)} != {repr(expected_url)}")
-                logger.debug(f"requestWillBeSent {request_id} {request_url}")
-                return
-            logger.debug(f"requestWillBeSent {request_id} {request_url} setting expected_request_id")
-            expected_request_id = request_id
+            else:
+                # expected_request_id is unknown
+                # filter by request_url
+                if request_url != expected_url:
+                    # this can be REALLY verbose...
+                    if ignore_url(request_url):
+                        return
+                    #logger.debug(f"requestWillBeSent: ignoring request to {repr(request_url)} != {repr(expected_url)}")
+                    logger.debug(f"requestWillBeSent {request_id} {request_url}")
+                    return
+                logger.debug(f"requestWillBeSent {request_id} {request_url} setting expected_request_id")
+                # set this only here
+                # request_id stays constant over redirects
+                expected_request_id = request_id
             # TODO? wait until all requests have a response
             # aka "networkIdle"
             #return
@@ -1189,17 +1207,28 @@ class ClientSession(aiohttp.ClientSession):
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
             request_id = args["requestId"]
-            request_url = request_url_by_id[request_id]
+            if request_id != expected_request_id:
+                logger.debug(f"responseReceived {request_id} ignoring response {response_status}")
+                return
+            try:
+                request_url = request_url_by_id[request_id]
+            except KeyError:
+                # this can happen during cleanup
+                # TODO verify
+                logger.debug(f"responseReceived {request_id} ignoring response with unknown url")
+                return
 
             # FIXME make the url check more loose
             # http == https
+            """
             if response_url != expected_url:
                 # this can be REALLY verbose...
                 if ignore_url(response_url):
                     return
-                logger.debug(f"responseReceived: ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
+                logger.debug(f"responseReceived {request_id} ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
                 #logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
                 return
+            """
 
             response_done = True
 
@@ -1297,6 +1326,8 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"responseReceived {response_status} {response_url} {response_type} " + repr(response_body[:20]) + "...")
 
         async def responseReceivedExtraInfo(args):
+            # FIXME the responseReceivedExtraInfo can be missing
+            # so dont use this to modify expected_url
             nonlocal expected_request_id
             nonlocal expected_url
             request_id = args["requestId"]
@@ -1304,16 +1335,10 @@ class ClientSession(aiohttp.ClientSession):
             # -> requestWillBeSent
             # but url can be missing!
             request_url = request_url_by_id.get(request_id)
-            if expected_request_id:
-                if request_id != expected_request_id:
-                    return
-            elif request_url:
-                # filter by url
-                if request_url != expected_url:
-                    return
-                expected_request_id = request_id
-            logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
-            #logger.debug(f"responseReceivedExtraInfo {request_id} FIXME parse location header")
+            if request_id != expected_request_id:
+                return
+            #logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
+            logger.debug(f"responseReceivedExtraInfo {request_id} {request_url}")
             # TODO are these dict keys always lowercase?
             location = args["headers"].get("location")
             if location:
@@ -1344,6 +1369,7 @@ class ClientSession(aiohttp.ClientSession):
             #response_done = False
             url = args["url"]
             guid = args["guid"]
+            # FIXME filter by request_id?
             if url != expected_url:
                 # ignore this event
                 #logger.debug(f"downloadWillBegin: ignoring download from {repr(url)} != {repr(expected_url)}")
@@ -1478,6 +1504,13 @@ class ClientSession(aiohttp.ClientSession):
         await target.add_cdp_listener("Target.targetInfoChanged", targetInfoChanged)
 
         #logger.debug(f"driver.targets {await driver.targets}")
+
+        # lifecycle of request
+        # requestWillBeSent: set expected_request_id
+        # responseReceived
+        # responseReceivedExtraInfo
+        # requestWillBeSent: if redirect, has the same request_id
+        # ...
 
         args = {
             "maxTotalBufferSize": 1_000_000,  # 1GB

@@ -52,9 +52,9 @@ class ChromiumExtension:
 
         await self.fix_path()
 
-        await self.patch()
-
         await self.load_state()
+
+        await self.patch()
 
         self.session._chromium_options.add_argument(f"--load-extension={self.path}")
 
@@ -263,14 +263,25 @@ class Ublock(ChromiumExtension):
     async def patch(self):
 
         self.log(f"patch: patching /js/background.js")
+
         # TODO refactor patching of files
         with open(self.path + "/js/background.js", "r") as f:
             text = f.read()
+
         # enable: Suspend network activity until all filter lists are loaded
         text = text.replace(
             "suspendUntilListsAreLoaded: vAPI.Net.canSuspend(),",
             "suspendUntilListsAreLoaded: true,",
         )
+
+        # if state was loaded
+        if os.path.exists(self.settings_path):
+            # disable: Auto-update filter lists
+            text = text.replace(
+                "autoUpdate: true,",
+                "autoUpdate: false,",
+            )
+
         with open(self.path + "/js/background.js", "w") as f:
             f.write(text)
 
