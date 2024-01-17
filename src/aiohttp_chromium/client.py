@@ -430,6 +430,11 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                 # FIXME handle missing file
                 # FIXME handle incomplete file
                 # FIXME remove open
+                # FIXME FileNotFoundError: download file can be missing
+                if not os.path.exists(self._filepath):
+                    logger.debug(f"ClientResponse.content: FIXME missing file {self._filepath}")
+                # NOTE self._filepath can be an incomplete download
+                # TODO when download is complete, signal from cdp event listenr to response
                 self._content = open(self._filepath, "rb")
             else:
                 if self._body is None:
