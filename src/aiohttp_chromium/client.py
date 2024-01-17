@@ -246,6 +246,8 @@ class _RequestContextManager(_BaseRequestContextManager[ClientResponse]):
 
 class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
+    _content = None
+
     def __init__(
             self,
             method,
@@ -282,8 +284,6 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         #self.version = 1234
 
         self._headers = _headers
-
-        self._content = None
 
         # suggestedFilename from downloadWillBegin event
         # filename from content-disposition header
