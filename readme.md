@@ -65,6 +65,16 @@ possible solutions
 
 
 
+## todo
+
+- graphical interface where the user can solve challenges: captchas, unexpected responses, ...
+- integration with captcha solving services
+- remove unfree dependencies
+  - [selenium_driverless](https://github.com/kaliiiiiiiiii/Selenium-Driverless) - [cc by-nc-sa license](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+  - [cdp_socket](https://github.com/kaliiiiiiiiii/CDP-Socket) - [cc by-nc-sa license](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+
+
 ## keywords
 
 - web scraper
