@@ -1,3 +1,9 @@
+# TODO https://github.com/sindresorhus/clear-downloads
+# clear downloads history every 10 seconds
+# = remove finished downloads
+
+
+
 import hashlib
 import shutil
 import os
