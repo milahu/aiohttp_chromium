@@ -1712,6 +1712,10 @@ class ClientSession(aiohttp.ClientSession):
                 timeout_handle_handle.cancel()
                 timeout_handle_handle = None
 
+            # mark the window as "old"
+            # so it can be re-used or closed by session
+            self._old_driver_windows.append(driver_window)
+
             raise
 
 
