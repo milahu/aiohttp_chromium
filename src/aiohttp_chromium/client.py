@@ -844,6 +844,15 @@ class ClientSession(aiohttp.ClientSession):
 
         # TODO expose config
         self._chromium_config = {
+            "in_product_help": {
+                "snoozed_feature": {
+                    "IPH_HighEfficiencyMode": {
+                        # disable "memory saver"
+                        # instead, limit number of open tabs
+                        "is_dismissed": True,
+                    },
+                },
+            },
             "bookmark_bar": {
                 # disable bookmarks bar
                 "show_on_all_tabs": False,
