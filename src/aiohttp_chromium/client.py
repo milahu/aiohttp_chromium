@@ -1,5 +1,9 @@
 # FIXME detect when chromium tabs or windows are closed manually
 
+# FIXME StreamReader._wait_complete is needed
+# to wait until a file download is complete
+# this must be done via "def downloadProgress"
+
 # python stdlib modules
 import sys
 import os
@@ -99,9 +103,9 @@ from aiohttp.helpers import (
     strip_auth_from_url,
 )
 
-from aiohttp.streams import (
-    StreamReader,
-)
+import aiohttp.streams
+
+#from aiohttp.streams import StreamReader
 
 from aiohttp.base_protocol import (
     BaseProtocol,
@@ -244,9 +248,98 @@ class _RequestContextManager(_BaseRequestContextManager[ClientResponse]):
 
 
 
+# FIXME refactor to generic class StreamReader
+# to handle both files and buffers (on-disk and in-memory)
+# https://stackoverflow.com/questions/16752122/dealing-with-trying-to-read-a-file-that-might-not-exist
+# bonus points for reading a file that will be created in the future.
+# f = open(path) should not wait,
+# but await f.read() should wait until the file exists,
+# and until the file has some expected size.
+# probably based on aiofiles.
+# aka "lazy file reader",
+# useful to handle file downloads, to wait until the file download is complete
+# https://github.com/Tinche/aiofiles
+class StreamReaderFile(io.BufferedReader):
+    # TODO rename? how does io.BufferedReader work?!
+    _filepath = None
+    _filehandle = None
+    _limit = None
+    def __init__(self, _filepath=None, limit=None, **kwargs):
+        if kwargs:
+            raise NotImplementedError(f"StreamReader.__init__: kwargs = {kwargs}")
+        self._filepath = _filepath
+        # FIXME what is limit?
+        # currently im passing the file size as limit
+        # but the file size can be unknown ahead of download ("infinite file", stream)
+        self._limit = limit
+    def close(self):
+        logger.debug(f"StreamReader.close")
+        if not self._filehandle:
+            # nothing to close
+            return
+        self._filehandle.close()
+        #super().close()
+    async def _wait_complete(self, num_bytes=None):
+        raise NotImplementedError("StreamReader._wait_complete")
+        if num_bytes:
+            raise NotImplementedError("StreamReader._wait_complete: num_bytes != None")
+        if not self._limit:
+            raise NotImplementedError("StreamReader._wait_complete: self._limit == None")
+        while True:
+            try:
+                # TODO self._limit or self._filesize
+                if os.path.getsize(self._filepath) == self._limit:
+                    return
+            except FileNotFoundError:
+                pass
+            #except Exception as e:
+            #    logger.debug(f"StreamReader._wait_complete: e {type(e)} {e}")
+            sleep_step = 1 # TODO expose
+            await asyncio.sleep(sleep_step)
+    async def _open_file(self):
+        """
+        wait until the file exists, then open the file
+        """
+        logger.debug(f"StreamReader._open_file")
+        if self._filehandle:
+            return
+        while True:
+            try:
+                # TODO use aiofiles
+                self._filehandle = open(self._filepath, "rb")
+                return
+            except FileNotFoundError:
+                pass
+            sleep_step = 1 # TODO expose
+            logger.debug(f"StreamReader._open_file: waiting until file exists")
+            await asyncio.sleep(sleep_step)
+    async def read(self, num_bytes=None):
+        logger.debug(f"StreamReader.read")
+        if self._filepath:
+            if not self._filehandle:
+                # NOTE this will wait until the file is created
+                # so this can wait forever if the file is never created
+                await self._open_file()
+            # TODO use aiofiles
+            #return await self._filehandle.read()
+            if num_bytes:
+                await self._wait_complete(num_bytes)
+                # TODO verify
+                return self._filehandle.read(num_bytes)
+            await self._wait_complete()
+            return self._filehandle.read()
+        #if not self._filepath:
+        raise NotImplementedError("self._filepath == None")
+
+
+
 class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
     _content = None
+
+    # TODO set self._filesize from expected size of download
+    # TODO what if actual download size is different?
+    _filesize = None
 
     def __init__(
             self,
@@ -296,6 +389,12 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
         # TODO event ...
         self._download_is_complete = _download_is_complete
+
+        # FIXME the filesize can be unknown ahead of time
+        # FIXME responseReceived: response is file download -> waiting for downloadWillBegin event
+        content_length = self._headers.get("content-length", None)
+        if content_length:
+            self._filesize = int(content_length)
 
         self._is_file = _filepath != None
 
@@ -425,17 +524,32 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
         if self._content is None:
             if self._filepath:
+
+                self._StreamReader = StreamReaderFile
+
+                self._content = self._StreamReader(
+                    _filepath=self._filepath,
+                    limit=self._filesize,
+                )
+
+                """
                 # dont use self._body
                 # open -> io.BufferedReader
                 # FIXME handle missing file
                 # FIXME handle incomplete file
                 # FIXME remove open
                 # FIXME FileNotFoundError: download file can be missing
+                # response.content should be lazy:
+                # it should also work on incomplete responses
+                # and only (await response.content.read()) should wait until the response is complete
                 if not os.path.exists(self._filepath):
-                    logger.debug(f"ClientResponse.content: FIXME missing file {self._filepath}")
+                    d = os.path.dirname(self._filepath)
+                    logger.debug(f"ClientResponse.content: FIXME missing file {repr(self._filepath)}. files in {repr(d)}: {os.listdir(d)}")
                 # NOTE self._filepath can be an incomplete download
                 # TODO when download is complete, signal from cdp event listenr to response
                 self._content = open(self._filepath, "rb")
+                """
+
             else:
                 if self._body is None:
                     logger.debug(f"ClientResponse.content: _body")
@@ -451,7 +565,8 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                 logger.debug(f"ClientResponse.content: protocol")
                 protocol = ResponseHandler(loop=self._loop) # TODO verify
                 logger.debug(f"ClientResponse.content: StreamReader")
-                self._content = StreamReader(
+                self._StreamReader = aiohttp.streams.StreamReader
+                self._content = self._StreamReader(
                     protocol,
                     limit=len(self._body), # TODO verify
                 )
@@ -478,9 +593,21 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         """
 
         if not self._filepath:
-            return True
+            return
 
-        return self._download_is_complete
+        # FIXME filesize can be unknown: self._filesize == None
+        assert self._filesize != None
+
+        while True:
+            try:
+                if os.path.getsize(self._filepath) == self._filesize:
+                    return
+            except FileNotFoundError:
+                pass
+            #except Exception as e:
+            #    logger.debug(f"ClientResponse._wait_complete: e {type(e)} {e}")
+            sleep_step = 1 # TODO expose
+            await asyncio.sleep(sleep_step)
 
         # FIXME implement timeout
 
@@ -522,7 +649,12 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
             #elif isinstance(self._content, io.TextIOWrapper):
             #    # open(file_path, "r")
             #    self._content.close()
-            elif isinstance(self._content, StreamReader):
+            # FIXME refactor to generic class StreamReader
+            elif isinstance(self._content, aiohttp.streams.StreamReader):
+                del self._content
+            elif type(self._content).__name__ == "StreamReader":
+                del self._content
+            elif type(self._content).__name__ == "StreamReaderFile":
                 del self._content
         if self._filepath:
             # delete tempfile
@@ -597,6 +729,8 @@ class ClientSession(aiohttp.ClientSession):
 
     aka: headful chromium web scraper
     """
+
+    _debug2 = False
 
     chromium_window_id = None
     vnc_client_list = []
@@ -1124,6 +1258,7 @@ class ClientSession(aiohttp.ClientSession):
 
         # pass response_data from responseReceived to downloadWillBegin
         response_data = None
+        download_data = None
 
         #response_body = None
         #response_ready = asyncio.Event()
@@ -1212,17 +1347,24 @@ class ClientSession(aiohttp.ClientSession):
         async def responseReceived(args):
             nonlocal url
             nonlocal response_data
+            nonlocal download_data
             #nonlocal response_body
             nonlocal response_queue
             nonlocal response_done
             # TODO better. get target of this response
             nonlocal target
+
+            if args == None:
+                # this should never happen
+                raise Exception(f"responseReceived: args == None")
+
             #logger.debug(f"responseReceived {json.dumps(args, indent=2)}")
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
             request_id = args["requestId"]
             if request_id != expected_request_id:
-                logger.debug(f"responseReceived {request_id} ignoring response {response_status}")
+                if self._debug2:
+                    logger.debug(f"responseReceived {request_id} ignoring response {response_status}")
                 return
             try:
                 request_url = request_url_by_id[request_id]
@@ -1278,34 +1420,23 @@ class ClientSession(aiohttp.ClientSession):
 
             if content_disposition.startswith("attachment"):
 
-                # response is a file download
+                # response is attachment (file download)
                 # on file downloads, Network.getResponseBody would hang forever
-                logger.debug(f"responseReceived: response is file download -> waiting for downloadWillBegin event")
 
-                # wait for downloadWillBegin event
-                # usually (always?) the downloadWillBegin event
-                # is fired after the responseReceived event
-                return
+                response_data = args
+
+                if download_data:
+                    # download_data was set by downloadWillBegin
+                    await finish_download_response(response_data, download_data)
+                else:
+                    logger.debug(f"responseReceived: response is file download -> waiting for downloadWillBegin event")
 
                 # dont read file, it could be too large for RAM
-                response_body = None
-                # parse filename from content_disposition
-                # https://stackoverflow.com/a/73418983/10440128
-                """
-                value, params = cgi.parse_header(content_disposition)
-                if value != "attachment":
-                    raise NotImplementedError(f"TODO handle non-attachment content_disposition {repr(content_disposition)}")
-                """
-                """
-                # FIXME can this be empty? can server send attachment without name? why not...
-                # TODO then use basename of url as filename
-                response_filename = pyrfc6266.parse_filename(content_disposition)
-                logger.debug(f"responseReceived: response_filename {response_filename}")
-                """
+                #response_body = None
+                return
 
             #else:
-
-            # response is a visible page (html, txt, jpg, ...)
+            # response is inline content (html, txt, jpg, ...)
             #logger.debug(f"responseReceived: response is visible page")
             logger.debug(f"responseReceived: Network.getResponseBody sleep")
 
@@ -1356,6 +1487,7 @@ class ClientSession(aiohttp.ClientSession):
             # TODO are these dict keys always lowercase?
             location = args["headers"].get("location")
             if location:
+                # TODO populate response.history = list of intermediary responses
                 new_expected_url = str(URL(expected_url).join(URL(location)))
                 if expected_url != new_expected_url:
                     logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} changing expected_url from {expected_url} to {new_expected_url}")
@@ -1374,9 +1506,20 @@ class ClientSession(aiohttp.ClientSession):
 
         # FIXME not fired in rare cases
         async def downloadWillBegin(args):
+
+            # response_data was set by responseReceived
+            # in most cases, responseReceived is called before downloadWillBegin
             nonlocal response_data
+            nonlocal download_data
+
+            # guid = download id
             nonlocal response_guid
+
             nonlocal expected_url
+
+            if args == None:
+                # this should never happen
+                raise Exception(f"downloadWillBegin: args == None")
 
             # no. use response_guid
             #response_filepath = self._downloads_path + "/" + response_guid
@@ -1402,14 +1545,33 @@ class ClientSession(aiohttp.ClientSession):
                 #return
             response_guid = guid
 
-            #logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
+            download_data = args
 
-            response_filename = args["suggestedFilename"]
+            if response_data:
+                # response_data was set by responseReceived
+                await finish_download_response(response_data, download_data)
+            else:
+                logger.debug(f"downloadWillBegin: response_data is missing -> waiting for responseReceived event")
+
+        # called from downloadWillBegin or responseReceived
+        # in most cases, responseReceived comes before downloadWillBegin
+        # but downloadWillBegin can come before responseReceived
+
+        async def finish_download_response(response_data, download_data):
+
+            url = download_data["url"]
+            guid = download_data["guid"]
+
+            response_guid = guid
+
+            logger.debug(f"finish_download_response {guid} {json.dumps(download_data, indent=2)}")
+
+            response_filename = download_data["suggestedFilename"]
             if not response_filename:
-                logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
-                raise Exception(f"downloadWillBegin: empty response_filename: {repr(response_filename)}")
+                logger.debug(f"finish_download_response {guid} {json.dumps(download_data, indent=2)}")
+                raise Exception(f"finish_download_response: empty response_filename: {repr(response_filename)}")
 
-            logger.debug(f"downloadWillBegin: {guid} -> {response_filename}")
+            logger.debug(f"finish_download_response: {guid} -> {response_filename}")
 
             # wait some time for download to complete
 
@@ -1418,11 +1580,11 @@ class ClientSession(aiohttp.ClientSession):
             for i in range(60):
                 await asyncio.sleep(1)
                 if response_done:
-                    logger.debug(f"downloadWillBegin: download done")
+                    logger.debug(f"finish_download_response: download done")
                     break
 
             if not response_done:
-                logger.debug(f"downloadWillBegin: FIXME download is not complete. keep track of downloadProgress events")
+                logger.debug(f"finish_download_response: FIXME download is not complete. keep track of downloadProgress events")
                 await asyncio.sleep(9999999999999)
 
             # dont read file, it could be too large for RAM
@@ -1430,7 +1592,7 @@ class ClientSession(aiohttp.ClientSession):
 
             response_item = (response_data, response_body, response_filename, response_guid)
 
-            logger.debug(f"downloadWillBegin: response_queue.put")
+            logger.debug(f"finish_download_response: response_queue.put")
             await response_queue.put(response_item)
 
             # FIXME keep track of downloadProgress events
@@ -1439,14 +1601,17 @@ class ClientSession(aiohttp.ClientSession):
         response_received = 0
 
         async def downloadProgress(args):
+            # TODO detect when download hangs for too long
+            # when receivedBytes stays constant below totalBytes
             nonlocal response_guid
             nonlocal response_done
             nonlocal response_received
+            guid = args["guid"]
+            if self._debug2:
+                logger.debug(f"downloadProgress {guid} {json.dumps(args, indent=2)}")
             if response_done:
                 # downloadProgress event is fired many many times after state completed
                 return
-            guid = args["guid"]
-            #logger.debug(f"downloadProgress {guid} {json.dumps(args, indent=2)}")
             if guid != response_guid:
                 # ignore
                 #logger.debug(f"downloadProgress: ignoring download {repr(guid)} != {repr(response_guid)}")
@@ -1524,7 +1689,14 @@ class ClientSession(aiohttp.ClientSession):
         # responseReceived
         # responseReceivedExtraInfo
         # requestWillBeSent: if redirect, has the same request_id
+        # responseReceived
+        # responseReceivedExtraInfo
+        # downloadWillBegin
+        # downloadProgress
+        # downloadProgress
+        # downloadProgress
         # ...
+        # NOTE downloadWillBegin can come before responseReceived
 
         args = {
             "maxTotalBufferSize": 1_000_000,  # 1GB
@@ -1636,6 +1808,8 @@ class ClientSession(aiohttp.ClientSession):
                         # FIXME on actual redirect, change expected_url
                         #await asyncio.sleep(5)
                         continue
+
+                    # TODO test: allow_redirects == False
 
                     # found a "good" response
                     break
