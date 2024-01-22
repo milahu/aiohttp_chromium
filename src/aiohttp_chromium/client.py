@@ -1077,6 +1077,10 @@ class ClientSession(aiohttp.ClientSession):
         options.add_argument("--wm-window-animations-disabled")
         options.add_argument("--animation-duration-scale=0")
 
+        # dont auto-reload pages on network errors
+        # otherwise, switching tabs would reload failed requests
+        options.add_argument("--disable-auto-reload")
+
         for idx, ext in enumerate(self._chromium_extensions):
             if type(ext) == str:
                 ext = getattr(extensions, ext)
