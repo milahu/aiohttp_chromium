@@ -977,6 +977,20 @@ class ClientSession(aiohttp.ClientSession):
         self._chromium_options = options
 
         # TODO expose config
+        self._chromium_state = {
+            "browser": {
+                "enabled_labs_experiments": [
+                    # remove the "Enable featured Experiments" button
+                    "chrome-labs@3",
+                    # remove the "Show side panel" button
+                    "hide-sidepanel-button",
+                    # remove the profile button
+                    "show-avatar-button@3"
+                ]
+            }
+        }
+
+        # TODO expose config
         self._chromium_config = {
             "browser": {
                 # use system title bar and borders
@@ -1093,6 +1107,12 @@ class ClientSession(aiohttp.ClientSession):
         os.makedirs(self._chromium_user_data_dir + "/Default", exist_ok=True)
         with open(self._chromium_config_path, "w") as f:
             json.dump(self._chromium_config, f, indent=2)
+
+        # write chromium state file
+        self._chromium_state_path = self._chromium_user_data_dir + "/Local State"
+        logger.debug(f"writing chromium state file: {self._chromium_state_path}")
+        with open(self._chromium_state_path, "w") as f:
+            json.dump(self._chromium_state, f)
 
         # TODO expose
         # disable debug messages, these are too verbose
