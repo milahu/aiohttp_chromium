@@ -978,6 +978,10 @@ class ClientSession(aiohttp.ClientSession):
 
         # TODO expose config
         self._chromium_config = {
+            "browser": {
+                # use system title bar and borders
+                "custom_chrome_frame": False,
+            },
             "in_product_help": {
                 "snoozed_feature": {
                     "IPH_HighEfficiencyMode": {
