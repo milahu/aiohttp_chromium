@@ -85,8 +85,6 @@ possible solutions
 - remove unfree dependencies
   - [selenium_driverless](https://github.com/kaliiiiiiiiii/Selenium-Driverless) - [cc by-nc-sa license](http://creativecommons.org/licenses/by-nc-sa/4.0/)
     - `selenium_driverless` is a high-level wrapper for the [Chrome DevTools Protocol (CDP)](https://chromedevtools.github.io/devtools-protocol/)
-  - [cdp_socket](https://github.com/kaliiiiiiiiii/CDP-Socket) - [cc by-nc-sa license](http://creativecommons.org/licenses/by-nc-sa/4.0/)
-    - `cdp_socket` is a websockets client, handling the low-level connection to the [Chrome DevTools Protocol (CDP)](https://chromedevtools.github.io/devtools-protocol/)
 - `grep -r -w FIXME src/`
 - `grep -r -w TODO src/`
 
