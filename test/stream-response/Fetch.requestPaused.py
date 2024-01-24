@@ -311,6 +311,7 @@ async def main():
         return
         """
 
+        # fix: TypeError: Object of type bytes is not JSON serializable
         body = base64.b64encode(body).decode("ascii")
         _args = {
             "requestId": args['requestId'],
@@ -384,8 +385,17 @@ async def main():
             {"requestStage": "Response", "urlPattern":"*"},
         ]
     }
+
+    # only for driver.current_target
     await target.execute_cdp_cmd("Fetch.enable", args)
     await target.add_cdp_listener("Fetch.requestPaused", requestPaused)
+
+    """
+    # for all targets
+    # TODO verify
+    await driver.execute_cdp_cmd("Fetch.enable", args)
+    await driver.add_cdp_listener("Fetch.requestPaused", requestPaused)
+    """
 
     #await asyncio.sleep(1)
 
