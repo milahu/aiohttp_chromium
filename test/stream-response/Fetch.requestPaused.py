@@ -17,168 +17,9 @@ from cdp_socket.exceptions import CDPError
 async def main():
 
     driver = await webdriver.Chrome()
-    #await asyncio.sleep(1)
-
-    target = None
-    base_target = None
-
-    interceptionId = None
-
-    async def requestWillBeSent(args):
-        print(f"requestWillBeSent {json.dumps(args, indent=2)}")
-        #print("requestWillBeSent", args["request"]["url"])
-
-    async def requestWillBeSentExtraInfo(args):
-        print(f"requestWillBeSentExtraInfo {json.dumps(args, indent=2)}")
-
-    async def responseReceived(args):
-        print(f"responseReceived {json.dumps(args, indent=2)}")
-        # TODO better. get target of this response
-        nonlocal target
-        #print("responseReceived", args)
-        print("responseReceived status")
-        status = args["response"]["status"]
-        print("responseReceived url")
-        url = args["response"]["url"]
-        print("responseReceived type")
-        _type = args["response"]["headers"].get("Content-Type")
-
-        print("responseReceived sleep")
-        # TODO better. detect when response data is ready
-        # fix: No data found for resource with given identifier
-        await asyncio.sleep(1)
-
-        # Network.streamResourceContent
-        # https://chromedevtools.github.io/devtools-protocol/tot/Network/
-
-        print("responseReceived body")
-        """
-        args = {
-            "requestId": args["requestId"],
-        }
-        body = await target.execute_cdp_cmd("Network.getResponseBody", args)
-        body = base64.b64decode(body["body"]) if body["base64Encoded"] else body["body"]
-        print("responseReceived", status, url, _type, repr(body[:20]) + "...")
-        """
-
-        # Network.streamResourceContent
-        # more data will be passed in Network.dataReceived events
-        args = {
-            "requestId": args["requestId"],
-        }
-
-        # not found -> base_target?
-        #data = await target.execute_cdp_cmd("Network.streamResourceContent", args)
-        # not found -> driver?
-        #data = await base_target.execute_cdp_cmd("Network.streamResourceContent", args)
-        #data = await driver.execute_cdp_cmd("Network.streamResourceContent", args)
-
-        print("Network.takeResponseBodyForInterceptionAsStream")
-        args = {
-            "interceptionId": interceptionId,
-        }
-        stream = await driver.execute_cdp_cmd("Network.takeResponseBodyForInterceptionAsStream", args)
-        stream = stream["stream"]
-        print("Network.takeResponseBodyForInterceptionAsStream ->", stream)
-
-    """
-    async def requestIntercepted(args):
-        print("requestIntercepted")
-        global interceptionId
-        interceptionId = args["interceptionId"]
-    """
-
-    # FIXME args["data"] is always missing
-    async def dataReceived(args):
-        print(f"dataReceived {json.dumps(args, indent=2)}")
-
-    async def responseReceivedExtraInfo(args):
-        print(f"responseReceivedExtraInfo {json.dumps(args, indent=2)}")
-
-    async def targetCreated(args):
-        print(f"targetCreated {json.dumps(args, indent=2)}")
-
-    async def targetInfoChanged(args):
-        print(f"targetInfoChanged {json.dumps(args, indent=2)}")
-
-    # Deprecated, use Fetch.requestPaused instead.
-    # -> Fetch.enable
-    async def requestIntercepted(args):
-        print(f"requestIntercepted {json.dumps(args, indent=2)}")
-        nonlocal target
-
-        global interceptionId
-        # keyerror: interceptionId
-        #interceptionId = args["interceptionId"]
-
-        print("requestIntercepted", args)
-        url = args["request"]["url"]
-        _args = {"interceptionId": args['interceptionId']}
-        #if args.get('responseStatusCode') in [301, 302, 303, 307, 308]:
-        if False:
-            # redirected request
-            return await target.execute_cdp_cmd("Network.continueInterceptedRequest", _args)
-        _args = {"headers":args["request"]["headers"]}
-        _args["headers"]["test"] = "Hello World!"
-        _args.update(_args)
-        await target.execute_cdp_cmd("Network.continueInterceptedRequest", _args)
-        print("requestIntercepted: url", url)
 
     target = await driver.current_target
-    #print("target.id", target.id)
-
     base_target = await driver.base_target
-
-    # enable Target events
-    args = {
-        "discover": True,
-        #"filter": ...
-    }
-    await target.execute_cdp_cmd("Target.setDiscoverTargets", args)
-
-    args = {
-        "maxTotalBufferSize": 1_000_000,  # 1GB
-        "maxResourceBufferSize": 1_000_000,
-        "maxPostDataSize": 1_000_000
-    }
-    #await target.execute_cdp_cmd("Network.enable", args)
-
-    # deprecated
-    """
-    args = {
-        "patterns": [{"urlPattern": "*"}],
-        #"interceptionStage": "HeadersReceived",
-    }
-    await target.execute_cdp_cmd("Network.setRequestInterception", args)
-    await target.add_cdp_listener("Network.requestIntercepted", requestIntercepted)
-    """
-
-    #await target.add_cdp_listener("Network.dataReceived", dataReceived)
-    await driver.add_cdp_listener("Network.dataReceived", dataReceived)
-
-    #await target.add_cdp_listener("Target.targetCreated", targetCreated)
-    #await target.add_cdp_listener("Target.targetInfoChanged", targetInfoChanged)
-
-    await target.add_cdp_listener("Network.requestIntercepted", requestIntercepted)
-
-    #print("driver.targets", await driver.targets)
-
-    # no. getting response body as stream is not working with Network.dataReceived
-    # FIXME Network.streamResourceContent
-    # Enables streaming of the response for the given requestId. If enabled, the dataReceived event contains the data that was received during streaming.
-    """
-    # enable Network events: requestWillBeSent, responseReceived, ...
-    args = {
-        "maxTotalBufferSize": 1_000_000,  # 1GB
-        "maxResourceBufferSize": 1_000_000,
-        "maxPostDataSize": 1_000_000
-    }
-    await target.execute_cdp_cmd("Network.enable", args)
-    await target.add_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
-    #await target.add_cdp_listener("Network.requestWillBeSentExtraInfo", requestWillBeSentExtraInfo)
-    await target.add_cdp_listener("Network.responseReceived", responseReceived)
-    #await target.add_cdp_listener("Network.responseReceivedExtraInfo", responseReceivedExtraInfo)
-    """
 
     async def requestPaused(args):
         #print(f"requestPaused {json.dumps(args, indent=2)}")
@@ -255,10 +96,6 @@ async def main():
         return
         """
 
-        # we dont need the raw body any more. encode it to base64
-        if type(body) == str:
-            body = body.encode("utf8")
-
         # test: size limit of body
         # https://groups.google.com/g/chrome-debugging-protocol/c/w65z0cMqgvc
         # all response overrides are inherently limited by whatever fits in a single CDP message.
@@ -311,6 +148,9 @@ async def main():
         return
         """
 
+        # we dont need the raw body any more. encode it to base64
+        if type(body) == str:
+            body = body.encode("utf8")
         # fix: TypeError: Object of type bytes is not JSON serializable
         body = base64.b64encode(body).decode("ascii")
         _args = {
@@ -353,31 +193,6 @@ async def main():
         await target.execute_cdp_cmd("Fetch.fulfillRequest", _args)
         """
 
-        """
-        try:
-            body = await target.execute_cdp_cmd("Fetch.getResponseBody", _args, timeout=1)
-        except CDPError as e:
-            if e.code == -32000 and e.message == 'Can only get response body on requests captured after headers received.':
-                #print(args, "\n", file=sys.stderr)
-                #traceback.print_exc()
-                print(f"requestPaused: headers not received -> Fetch.continueResponse")
-                await target.execute_cdp_cmd("Fetch.continueResponse", _args)
-            else:
-                raise e
-        else:
-            start = time.monotonic()
-            body_decoded = base64.b64decode(body['body'])
-            # modify body here
-            body_modified = base64.b64encode(body_decoded).decode("ascii")
-            _args = {"responseCode": 200, "body": body_modified}
-            _args.update(_args)
-            _time = time.monotonic() - start
-            if _time > 0.01:
-                logger_print(f"decoding took long: {_time} s")
-            await target.execute_cdp_cmd("Fetch.fulfillRequest", _args)
-            logger_print("Mocked response", url)
-        """
-
     args = {
         # by default, requestStage == "Request"
         "patterns": [
@@ -397,8 +212,6 @@ async def main():
     await driver.add_cdp_listener("Fetch.requestPaused", requestPaused)
     """
 
-    #await asyncio.sleep(1)
-
     #url = "http://httpbin.org/get" # json response
     #url = "https://nowsecure.nl/#relax" # captcha challenge
     # TODO test more captchas https://nopecha.com/demo
@@ -413,8 +226,9 @@ async def main():
     # and status 200 for solved captcha
     # -> manually wait for page load
     await driver.get(url, wait_load=False)
-    await asyncio.sleep(10)
-    print("driver.page_source", (await driver.page_source)[:100])
+
+    #await asyncio.sleep(10)
+    #print("driver.page_source", (await driver.page_source)[:100])
 
     #print("driver.targets", await driver.targets)
 
