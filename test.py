@@ -30,7 +30,7 @@ async def main():
         # https://github.com/postmanlabs/httpbin/issues/240
         url = "http://httpbin.org/response-headers?Content-Type=text/plain;%20charset=UTF-8&Content-Disposition=attachment;%20filename%3d%22test.json%22"
         # FIXME redirect to http 404 page https://www.opensubtitles.org/en/msg-dmca
-        url = "https://dl.opensubtitles.org/en/download/sub/6773940"
+        #url = "https://dl.opensubtitles.org/en/download/sub/6773940"
         print("session.get", url)
         async with session.get(url, timeout=2*60) as resp:
             print("resp.status"); print(resp.status)
