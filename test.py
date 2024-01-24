@@ -16,9 +16,9 @@ async def main():
     print("loading cookies.txt")
     cookie_jar.load()
     args = dict(
-        _chromium_extensions = [
-            "Ublock", # FIXME slow init
-        ],
+        #_chromium_extensions = [
+        #    "Ublock", # FIXME slow init
+        #],
         cookie_jar = cookie_jar,
     )
     async with aiohttp.ClientSession(**args) as session:
