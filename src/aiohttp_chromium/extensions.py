@@ -147,7 +147,11 @@ class ChromiumExtension:
             self.log(f"save_state: saving settings to {self.settings_cache}")
             os.makedirs(os.path.dirname(self.settings_cache), exist_ok=True)
             # FIXME use "rsync" to reduce disk writes
-            shutil.copytree(self.settings_path, self.settings_cache)
+            # FIXME FileExistsError: [Errno 17] File exists: '/home/user/.cache/aiohttp_chromium/extensions/ublock/settings'
+            try:
+                shutil.copytree(self.settings_path, self.settings_cache)
+            except FileExistsError as e:
+                self.log(f"FIXME FileExistsError {e}")
 
     async def pre_start(self):
 
