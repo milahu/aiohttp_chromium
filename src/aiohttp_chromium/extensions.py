@@ -1,19 +1,11 @@
-# TODO https://github.com/sindresorhus/clear-downloads
-# clear downloads history every 10 seconds
-# = remove finished downloads
-
-
-
 import hashlib
 import shutil
 import os
 import zipfile
 import logging
 import asyncio
-
-
-
 import aiohttp
+import string
 
 
 
@@ -24,11 +16,14 @@ class ChromiumExtension:
     session = None
     id = None
     cachedir = None
+    pinned = False
 
-    def __init__(self, session, pinned=True):
+    def __init__(self, session, pinned=None):
 
         self.session = session
-        self.pinned = pinned
+
+        if pinned != None:
+            self.pinned = pinned
 
         self._logger = logging.getLogger(self.__class__.__name__)
         self.log = self._logger.debug
@@ -223,7 +218,6 @@ def get_settings(path):
 
 
 
-import string
 def get_extension_id(path: str):
     # FIXME On Windows, the path needs to be encoded as utf-16-le
     # https://stackoverflow.com/questions/26053434
@@ -255,8 +249,6 @@ def sha256sum(file_path=None, data=None):
 
 
 
-import zipfile
-
 class Ublock(ChromiumExtension):
 
     name = "ublock"
@@ -265,6 +257,7 @@ class Ublock(ChromiumExtension):
         "url": "https://github.com/gorhill/uBlock/releases/download/1.55.0/uBlock0_1.55.0.chromium.zip",
         "sha256": "00cec043e4e30e758a9d8194a018121ac689345fde4d4d02baaac60b954f2d7d",
     }
+    pinned = True
 
     async def patch(self):
 
@@ -290,6 +283,36 @@ class Ublock(ChromiumExtension):
 
         with open(self.path + "/js/background.js", "w") as f:
             f.write(text)
+
+
+
+class ClearDownloads(ChromiumExtension):
+
+    name = "clear_downloads"
+    description = (
+        "remove finished downloads every 10 seconds"
+    )
+    website = "https://github.com/sindresorhus/clear-downloads"
+    source = {
+        "url": "https://github.com/sindresorhus/clear-downloads/archive/35c58beb63256eb6f8fbe55cd4a11ebe51fb044c.zip",
+        "sha256": "bb30eef83c684a764e5b6a7c25a0439ce3aa0cde9f05bec84f92c08b2d3cad01",
+    }
+
+
+
+class NoDownloadShelf(ChromiumExtension):
+
+    name = "no_download_shelf"
+    description = (
+        "hide the downloads shelf = downloads bar on bottom of window"
+    )
+    website = "https://github.com/aoirint/NoDownloadShelf"
+    source = {
+        "url": "https://github.com/aoirint/NoDownloadShelf/archive/342bbc883e276cdbcb0dee305fcb7c0bc7cb56b5.zip",
+        "sha256": "6638edaf9c77d4da897e6e54ea0e9cc32b6862e0a28ea66e8c8c42bb6243528f",
+    }
+
+
 
 class Buster(ChromiumExtension):
 

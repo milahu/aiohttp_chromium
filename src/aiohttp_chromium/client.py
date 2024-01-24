@@ -716,6 +716,8 @@ default_chromium_extensions = [
     "Ublock", # adblocker
     #"Buster", # captcha solver
     #"EditThisCookie", # manually edit/import/export cookies
+    "NoDownloadShelf", # remove downloads shelf
+    "ClearDownloads", # remove finished downloads
 ]
 
 
@@ -985,7 +987,11 @@ class ClientSession(aiohttp.ClientSession):
                     # remove the "Show side panel" button
                     "hide-sidepanel-button",
                     # remove the profile button
-                    "show-avatar-button@3"
+                    "show-avatar-button@3",
+                    # remove downloads bubble
+                    # instead, chromium will show the downloads shelf
+                    # downloads shelf is removed by NoDownloadShelf extension
+                    "download-bubble@2",
                 ]
             }
         }
@@ -1059,6 +1065,10 @@ class ClientSession(aiohttp.ClientSession):
                             },
                         },
                     },
+                },
+                "default_content_setting_values": {
+                    # disable notifications by default
+                    #"notifications": 2,
                 },
             },
             "selectfile": {
