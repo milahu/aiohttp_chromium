@@ -38,6 +38,19 @@ see also
 
 
 
+## why
+
+handling file downloads with `selenium` is too verbose,
+and too complex to integrate into `selenium`,
+so this is a wrapper for `selenium`
+
+i wanted a "stupid http client",
+so it has the same interface as `aiohttp.client`,
+and handling web pages has lower priority,
+so the `selenium` interface is hidden in `response._driver`
+
+
+
 ## known issues
 
 
