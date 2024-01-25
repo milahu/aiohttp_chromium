@@ -992,6 +992,14 @@ class ClientSession(aiohttp.ClientSession):
                     # instead, chromium will show the downloads shelf
                     # downloads shelf is removed by NoDownloadShelf extension
                     "download-bubble@2",
+                    # remove the "close tab" buttons
+                    # to prevent accidental closing of tabs
+                    "hide-tab-close-buttons",
+                    # remove the "tab search" button. not needed
+                    "remove-tabsearch-button",
+                    # dont switch tabs on scroll
+                    # to prevent accidental switching of tabs
+                    "scroll-tabs@2",
                 ]
             }
         }
