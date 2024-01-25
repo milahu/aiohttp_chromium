@@ -1000,6 +1000,8 @@ class ClientSession(aiohttp.ClientSession):
                     # dont switch tabs on scroll
                     # to prevent accidental switching of tabs
                     "scroll-tabs@2",
+                    # disable: Close window with last tab
+                    "close-window-with-last-tab@1",
                 ]
             }
         }
