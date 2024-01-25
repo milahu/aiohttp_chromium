@@ -116,6 +116,8 @@ async def main():
         print(f"responseReceived {url}: streamResourceContent data", repr(data))
 
         if data == None:
+            # fix: No data found for resource with given identifier
+            await asyncio.sleep(1)
             _args = {
                 "requestId": args["requestId"],
             }
