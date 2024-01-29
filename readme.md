@@ -80,6 +80,7 @@ possible solutions
 
 ## todo
 
+- remove tempfiles on session close and on error
 - add support for streams: request streams, response streams
   - currently, `session.get` only works for "short and small" requests and responses, but not for infinite streams
   - implementing this is non-trivial, because chromium does not expose streams over the [Chrome DevTools Protocol (CDP)](https://chromedevtools.github.io/devtools-protocol/)
