@@ -288,6 +288,14 @@ class Ublock(ChromiumExtension):
         with open(self.path + "/js/background.js", "w") as f:
             f.write(text)
 
+    async def post_start(self):
+        # TODO dynamic. wait until ublock is ready
+        # otherwise the first request fails at Network.getResponseBody
+        # try to get the status from
+        # url = f"chrome-extension://{self.id}/dashboard.html"
+        self.log(f"waiting until ublock is ready")
+        await asyncio.sleep(10)
+
 
 
 class ClearDownloads(ChromiumExtension):
