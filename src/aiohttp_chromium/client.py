@@ -141,7 +141,6 @@ from yarl import URL
 
 from . import extensions
 #import .extensions
-from . import pyrfc6266
 
 
 
