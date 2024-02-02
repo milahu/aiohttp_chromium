@@ -1835,12 +1835,12 @@ class ClientSession(aiohttp.ClientSession):
                 # wait for a "good" response
                 while True:
 
-                    logger.debug(f"_request: response_queue.get")
-
                     #logger.debug(f"_request: sleep 999999999"); await asyncio.sleep(999999999)
 
                     #await response_ready.wait()
                     response_item = await response_queue.get()
+
+                    logger.debug(f"_request: response_queue.get")
 
                     # TODO better?
                     (response_data, response_body, response_filename, response_guid) = response_item
