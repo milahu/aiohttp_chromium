@@ -1276,6 +1276,8 @@ class ClientSession(aiohttp.ClientSession):
 
         driver_window = await self._get_free_driver_window()
 
+        await self._driver.switch_to.window(driver_window)
+
         if type(timeout) in {int, float}:   
             timeout = ClientTimeout(total=timeout)
 
