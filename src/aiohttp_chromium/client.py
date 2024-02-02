@@ -550,7 +550,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                 """
 
             else:
-                if self._body is None:
+                if self._body is None and self._body_str != None:
                     logger.debug(f"ClientResponse.content: _body")
                     # str -> bytes
                     self._body = b"" # fix: self.get_encoding requires self._body
@@ -558,6 +558,9 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                     encoding = self.get_encoding()
                     logger.debug(f"ClientResponse.content: _body_str.encode")
                     self._body = self._body_str.encode(encoding)
+                elif self._body is None and self._body_str == None:
+                    # response is empty
+                    self._body = b""
                 logger.debug(f"ClientResponse.content: _content")
                 # FIXME use a dummy protocol. no need to pause/resume reading
                 #protocol = BaseProtocol() # TODO verify
@@ -1510,13 +1513,32 @@ class ClientSession(aiohttp.ClientSession):
             # better use Network.takeResponseBodyForInterceptionAsStream
             # instead of Network.getResponseBody
 
-            logger.debug(f"responseReceived: Network.getResponseBody ...")
-            args = {
-                "requestId": args["requestId"],
-            }
-            res = await target.execute_cdp_cmd("Network.getResponseBody", args)
-            logger.debug(f"responseReceived: Network.getResponseBody done")
-            response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
+            response_body = None
+
+            content_length = response_data["response"]["headers"].get("content-length", None)
+            if content_length != None:
+                content_length = int(content_length)
+
+            if content_length != 0:
+                # NOTE content can be empty when content_length == None
+                # or content_length can be wrong
+                logger.debug(f"responseReceived {request_id} Network.getResponseBody ...")
+                args = {
+                    "requestId": args["requestId"],
+                }
+                res = None
+                try:
+                    res = await target.execute_cdp_cmd("Network.getResponseBody", args)
+                    logger.debug(f"responseReceived {request_id} Network.getResponseBody done")
+                except cdp_socket.exceptions.CDPError as e:
+                    # {'code': -32000, 'message': 'No resource with given identifier found'}
+                    if e.code == -32000:
+                        logger.debug(f"responseReceived {request_id} Network.getResponseBody failed: {e}")
+                    else:
+                        raise
+                if res:
+                    response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
+
             #logger.debug(f"len(response_body): {len(response_body)}")
             response_filename = None
             #response_filepath = None
