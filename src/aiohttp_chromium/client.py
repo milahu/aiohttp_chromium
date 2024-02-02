@@ -1892,8 +1892,7 @@ class ClientSession(aiohttp.ClientSession):
                     #if resp_status in (301, 302, 303, 307, 308) and allow_redirects:
                     # 403 = too many requests -> solve captcha and follow redirect
                     if resp_status in (301, 302, 303, 307, 308, 403) and allow_redirects:
-                        title = await self._driver.title
-                        logger.debug(f"_request: status {resp_status}: title {title} -> waiting for a better response")
+                        logger.debug(f"_request: status {resp_status}: waiting for a better response")
                         # FIXME on actual redirect, change expected_url
                         #await asyncio.sleep(5)
                         continue
