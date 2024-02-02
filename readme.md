@@ -80,6 +80,7 @@ possible solutions
 
 ## todo
 
+- add support for "click to download file" with `async with resp._click(elem) as resp:` when there is no url for `async with session.get(url, referrer=referrer) as resp:`
 - remove tempfiles on session close and on error
 - add support for streams: request streams, response streams
   - currently, `session.get` only works for "short and small" requests and responses, but not for infinite streams
