@@ -1467,6 +1467,12 @@ class ClientSession(aiohttp.ClientSession):
             #content_disposition = response_data["response"]["headers"].get("content-disposition", "")
             content_disposition = dict_get_ci(response_data["response"]["headers"], "content-disposition", "")
 
+            # NOTE the content-disposition header is optional for file downloads
+            # some file downloads are initiated by the content-type header
+            # example:
+            # content-type: application/x-chrome-extension
+            # the download filename is always in downloadWillBegin suggestedFilename
+
             if content_disposition.startswith("attachment"):
 
                 # response is attachment (file download)
@@ -1491,7 +1497,14 @@ class ClientSession(aiohttp.ClientSession):
 
             # TODO better
             # fix: No data found for resource with given identifier
-            await asyncio.sleep(2)
+            sleep_before_getResponseBody = 2
+            try:
+                await asyncio.wait_for(event_downloadWillBegin.wait(), sleep_before_getResponseBody)
+                logger.debug(f"responseReceived {request_id} Network.getResponseBody sleep aborted by downloadWillBegin")
+                return
+            except TimeoutError:
+                # done sleep_before_getResponseBody
+                pass
 
             # FIXME this can hang, producing a TimeoutError
             # better use Network.takeResponseBodyForInterceptionAsStream
@@ -1553,6 +1566,8 @@ class ClientSession(aiohttp.ClientSession):
         response_guid = None
         response_done = False
 
+        event_downloadWillBegin = asyncio.Event()
+
         # FIXME not fired in rare cases
         async def downloadWillBegin(args):
 
@@ -1583,6 +1598,9 @@ class ClientSession(aiohttp.ClientSession):
                 # FIXME why? is expected_url a static variable?
                 logger.debug(f"downloadWillBegin {guid} {json.dumps(args, indent=2)}")
                 raise Exception(f"downloadWillBegin: unexpected url: {url} != {expected_url}")
+
+            # abort: Network.getResponseBody sleep
+            event_downloadWillBegin.set()
 
             if response_guid:
                 if guid != response_guid:
