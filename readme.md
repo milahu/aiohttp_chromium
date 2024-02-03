@@ -51,6 +51,12 @@ so the `selenium` interface is hidden in `response._driver`
 
 
 
+## examples
+
+- [crx4chrome-scraper](https://github.com/milahu/crx4chrome-scraper)
+
+
+
 ## known issues
 
 
