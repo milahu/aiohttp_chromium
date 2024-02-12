@@ -1850,6 +1850,10 @@ class ClientSession(aiohttp.ClientSession):
                         # because file downloads would always raise TimeoutError
                         # https://github.com/kaliiiiiiiiii/Selenium-Driverless/issues/140
 
+                        # load empty page before request
+                        # otherwise on file download, the last page remains visible
+                        await driver.get("about:blank", wait_load=False)
+
                         await driver.get(
                             url,
                             wait_load=False,
