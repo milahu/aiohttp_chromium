@@ -1252,7 +1252,15 @@ class ClientSession(aiohttp.ClientSession):
             # self._old_driver_windows list is empty
             pass
         # create a new window
-        driver_window = await self._driver.switch_to.new_window('tab')
+        logger.debug(f"session._get_free_driver_window: loop...")
+        while True:
+            try:
+                driver_window = await self._driver.switch_to.new_window('tab')
+                return driver_window
+            except Exception as e:
+                logger.debug(f"session._get_free_driver_window: {type(e)} {e}")
+                await asyncio.sleep(2)
+                #raise
         return driver_window
 
 
