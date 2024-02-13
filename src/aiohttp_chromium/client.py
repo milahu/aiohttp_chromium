@@ -1347,48 +1347,61 @@ class ClientSession(aiohttp.ClientSession):
         request_url_by_id = dict()
         request_id_by_frame_id = dict()
         request_id_by_guid = dict()
+        loader_id_by_request_id = dict()
+        loader_id_by_frame_id = dict()
+        loader_id_by_guid = dict()
 
         async def requestWillBeSent(args):
             nonlocal expected_request_id
             request_url = args["request"]["url"]
             request_id = args["requestId"]
+            loader_id = args["loaderId"] if args["loaderId"] != request_id else None
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
-            #logger.debug(f"req {request_id} requestWillBeSent {json.dumps(args, indent=2)}")
-            #logger.debug(f"req {request_id} requestWillBeSent {request_url}")
+            #logger.debug(f"req {request_id_path} requestWillBeSent {json.dumps(args, indent=2)}")
+            #logger.debug(f"req {request_id_path} requestWillBeSent url {request_url}")
 
+            # note: request_url can change due to protocol upgrade from http to https
             request_url_by_id[request_id] = request_url
+
             frame_id = args["frameId"]
             request_id_by_frame_id[frame_id] = request_id
+            loader_id_by_request_id[request_id] = loader_id
+            loader_id_by_frame_id[frame_id] = loader_id
 
             if expected_request_id:
                 # filter by request_id
                 if request_id != expected_request_id:
+                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
                     return
             else:
                 # expected_request_id is unknown
                 # filter by request_url
                 if request_url != expected_url:
+                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
                     # this can be REALLY verbose...
                     if ignore_url(request_url):
                         return
-                    #logger.debug(f"req {request_id} requestWillBeSent ignoring request to {repr(request_url)} != {repr(expected_url)}")
-                    logger.debug(f"req {request_id} requestWillBeSent {request_url}")
+                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
                     return
-                logger.debug(f"req {request_id} requestWillBeSent {request_url} setting expected_request_id")
+                #logger.debug(f"req {request_id_path} requestWillBeSent setting expected_request_id")
                 # set this only here
                 # request_id stays constant over redirects
                 expected_request_id = request_id
             # TODO? wait until all requests have a response
             # aka "networkIdle"
             #return
-            #logger.debug(f"req {request_id} requestWillBeSent {json.dumps(args, indent=2)}")
-            #logger.debug(f"req {request_id} requestWillBeSent " + json.dumps(args, indent=2))
-            logger.debug(f"req {request_id} requestWillBeSent {request_url}")
+            #logger.debug(f"req {request_id_path} requestWillBeSent {json.dumps(args, indent=2)}")
+            #logger.debug(f"req {request_id_path} requestWillBeSent " + json.dumps(args, indent=2))
+            logger.debug(f"req {request_id_path} requestWillBeSent url {request_url}")
 
         async def requestWillBeSentExtraInfo(args):
             request_id = args["requestId"]
+            #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo " + json.dumps(args, indent=2))
+            loader_id = loader_id_by_request_id[request_id]
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
             request_url = request_url_by_id[request_id]
-            logger.debug(f"req {request_id} requestWillBeSentExtraInfo {request_url} {json.dumps(args, indent=2)}")
+            #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo {json.dumps(args, indent=2)}")
 
         def ignore_url(url):
             if url.startswith("chrome-extension://"):
@@ -1429,7 +1442,11 @@ class ClientSession(aiohttp.ClientSession):
 
             nonlocal done_responseReceived
 
+            request_id = args["requestId"]
+            #logger.debug(f"req {request_id} responseReceived {json.dumps(args, indent=2)}")
+
             if done_responseReceived:
+                logger.debug(f"req {request_id} responseReceived ignoring done_responseReceived")
                 return
 
             nonlocal url
@@ -1443,22 +1460,28 @@ class ClientSession(aiohttp.ClientSession):
 
             if args == None:
                 # this should never happen
-                raise Exception(f"responseReceived: args == None")
+                raise Exception(f"req {request_id} responseReceived {responseReceived_num}: args == None")
 
             #logger.debug(f"responseReceived {json.dumps(args, indent=2)}")
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
             request_id = args["requestId"]
+            loader_id = args["loaderId"] if args["loaderId"] != request_id else None
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+
+            #logger.debug(f"req {request_id_path} responseReceived {json.dumps(args, indent=2)}")
+
             if request_id != expected_request_id:
                 if self._debug2:
-                    logger.debug(f"req {request_id} responseReceived ignoring response {response_status}")
+                    logger.debug(f"req {request_id_path} responseReceived ignoring response {response_status}")
                 return
+
             try:
                 request_url = request_url_by_id[request_id]
             except KeyError:
                 # this can happen during cleanup
                 # TODO verify
-                logger.debug(f"req {request_id} responseReceived ignoring response with unknown url")
+                logger.debug(f"req {request_id_path} responseReceived ignoring response with unknown url")
                 return
 
             # FIXME make the url check more loose
@@ -1468,25 +1491,25 @@ class ClientSession(aiohttp.ClientSession):
                 # this can be REALLY verbose...
                 if ignore_url(response_url):
                     return
-                logger.debug(f"req {request_id} responseReceived ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
-                #logger.debug(f"req {request_id} responseReceived {request_url} {json.dumps(args, indent=2)}")
+                logger.debug(f"req {request_id_path} responseReceived ignoring response {response_status} from {repr(response_url)} != {repr(expected_url)}")
+                #logger.debug(f"req {request_id_path} responseReceived {json.dumps(args, indent=2)}")
                 return
             """
 
             response_done = True
 
-            logger.debug(f"req {request_id} responseReceived status {response_status} from url {response_url}")
-            #logger.debug(f"req {request_id} responseReceived {request_url} {json.dumps(args, indent=2)}")
+            logger.debug(f"req {request_id_path} responseReceived status {response_status}")
+            #logger.debug(f"req {request_id_path} responseReceived {json.dumps(args, indent=2)}")
 
             #response_type = args["response"]["headers"]["Content-Type"]
 
             response_data = args
-            #logger.debug(f"req {request_id} responseReceived response_data: " + json.dumps(response_data, indent=2))
-            #logger.debug(f"req {request_id} responseReceived response headers: " + json.dumps(response_data["response"]["headers"], indent=2))
+            #logger.debug(f"req {request_id_path} responseReceived response_data: " + json.dumps(response_data, indent=2))
+            #logger.debug(f"req {request_id_path} responseReceived response headers: " + json.dumps(response_data["response"]["headers"], indent=2))
             if False:
-                logger.debug(f"req {request_id} responseReceived response headers:")
+                logger.debug(f"req {request_id_path} responseReceived response headers:")
                 for key, val in response_data["response"]["headers"].items():
-                    logger.debug(f"req {request_id} responseReceived response header: {key}: {val}")
+                    logger.debug(f"req {request_id_path} responseReceived response header: {key}: {val}")
 
             def dict_get_ci(_dict, key, default=None):
                 """
@@ -1504,6 +1527,7 @@ class ClientSession(aiohttp.ClientSession):
             # possible values: inline, attachment, form-data
             #content_disposition = response_data["response"]["headers"].get("content-disposition", "")
             content_disposition = dict_get_ci(response_data["response"]["headers"], "content-disposition", "")
+            logger.debug(f"req {request_id_path} responseReceived content_disposition {repr(content_disposition)}")
 
             # NOTE the content-disposition header is optional for file downloads
             # some file downloads are initiated by the content-type header
@@ -1521,8 +1545,9 @@ class ClientSession(aiohttp.ClientSession):
                 if download_data:
                     # download_data was set by downloadWillBegin
                     await finish_download_response(response_data, download_data)
+                    logger.debug(f"req {request_id_path} responseReceived download_data is set -> calling finish_download_response")
                 else:
-                    logger.debug(f"req {request_id} responseReceived response is file download -> waiting for downloadWillBegin event")
+                    logger.debug(f"req {request_id_path} responseReceived response is file download -> waiting for downloadWillBegin event")
 
                 done_responseReceived = True
 
@@ -1532,11 +1557,12 @@ class ClientSession(aiohttp.ClientSession):
 
             #else:
             # response is inline content (html, txt, jpg, ...)
-            #logger.debug(f"req {request_id} responseReceived responseReceived: response is visible page")
-            logger.debug(f"req {request_id} responseReceived Network.getResponseBody sleep")
+            #logger.debug(f"req {request_id_path} responseReceived responseReceived: response is visible page")
+            logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody sleep")
 
+            # FIXME this hangs
             # wait for loadingFinished or downloadWillBegin event
-            logger.debug(f"req {request_id} responseReceived Network.getResponseBody waiting for loadingFinished or downloadWillBegin")
+            logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody waiting for loadingFinished or downloadWillBegin")
             try:
                 wait_loadingFinished = event_loadingFinished.wait()
                 wait_downloadWillBegin = event_downloadWillBegin.wait()
@@ -1549,10 +1575,10 @@ class ClientSession(aiohttp.ClientSession):
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if wait_downloadWillBegin in done_wait:
-                    logger.debug(f"req {request_id} responseReceived Network.getResponseBody got downloadWillBegin -> return")
+                    logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody got downloadWillBegin -> return")
                     # TODO? cleanup wait_loadingFinished
                     return
-                logger.debug(f"req {request_id} responseReceived Network.getResponseBody got loadingFinished -> continue")
+                logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody got loadingFinished -> continue")
                 # TODO? cleanup wait_downloadWillBegin
             except TimeoutError:
                 # TODO?
@@ -1571,24 +1597,24 @@ class ClientSession(aiohttp.ClientSession):
             if content_length != 0:
                 # NOTE content can be empty when content_length == None
                 # or content_length can be wrong
-                logger.debug(f"req {request_id} responseReceived Network.getResponseBody ...")
+                logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody ...")
                 args = {
                     "requestId": args["requestId"],
                 }
                 res = None
                 try:
                     res = await target.execute_cdp_cmd("Network.getResponseBody", args)
-                    logger.debug(f"req {request_id} responseReceived Network.getResponseBody done")
+                    logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody done")
                 except cdp_socket.exceptions.CDPError as e:
                     # {'code': -32000, 'message': 'No resource with given identifier found'}
                     if e.code == -32000:
-                        logger.debug(f"req {request_id} responseReceived Network.getResponseBody failed: {e}")
+                        logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody failed: {e}")
                     else:
                         raise
                 if res:
                     response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
 
-            #logger.debug(f"req {request_id} responseReceived len(response_body): {len(response_body)}")
+            #logger.debug(f"req {request_id_path} responseReceived len(response_body): {len(response_body)}")
             response_filename = None
             #response_filepath = None
             response_guid = None
@@ -1599,7 +1625,7 @@ class ClientSession(aiohttp.ClientSession):
             #response_item = (response_data, response_body, response_filename, response_filepath)
             response_item = (response_data, response_body, response_filename, response_guid)
 
-            logger.debug(f"req {request_id} responseReceived response_queue.put")
+            logger.debug(f"req {request_id_path} responseReceived response_queue.put")
             await response_queue.put(response_item)
             #logger.debug(f"responseReceived {response_status} {response_url} {response_type} " + repr(response_body[:20]) + "...")
 
@@ -1609,30 +1635,32 @@ class ClientSession(aiohttp.ClientSession):
             nonlocal expected_request_id
             nonlocal expected_url
             request_id = args["requestId"]
+            loader_id = loader_id_by_request_id[request_id]
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+
             # FIXME how dow we know request_url_by_id[request_id]
             # -> requestWillBeSent
             # but url can be missing!
             request_url = request_url_by_id.get(request_id)
             if request_id != expected_request_id:
                 return
-            #logger.debug(f"req {request_id} responseReceivedExtraInfo {request_url} {json.dumps(args, indent=2)}")
-            logger.debug(f"req {request_id} responseReceivedExtraInfo {request_url}")
+            #logger.debug(f"req {request_id_path} responseReceivedExtraInfo {json.dumps(args, indent=2)}")
+            logger.debug(f"req {request_id_path} responseReceivedExtraInfo")
             # TODO are these dict keys always lowercase?
             location = args["headers"].get("location")
             if location:
                 # TODO populate response.history = list of intermediary responses
                 new_expected_url = str(URL(expected_url).join(URL(location)))
                 if expected_url != new_expected_url:
-                    logger.debug(f"req {request_id} responseReceivedExtraInfo {request_url} changing expected_url from {expected_url} to {new_expected_url}")
                     expected_url = new_expected_url
                     # reverse lookup from url to id
                     # https://stackoverflow.com/a/2569076/10440128
                     # mostly None ...
                     new_expected_request_id = next((id for id, url in request_url_by_id.items() if url == expected_url), None)
-                    logger.debug(f"req {request_id} responseReceivedExtraInfo {request_url} changing expected_request_id from {expected_request_id} to {new_expected_request_id}")
+                    logger.debug(f"req {request_id_path} responseReceivedExtraInfo following redirect from {expected_url} to {new_expected_url}")
                     expected_request_id = new_expected_request_id
                 else:
-                    raise NotImplementedError(f"noop redirect from url {expected_url} to location {location}")
+                    raise NotImplementedError(f"req {request_id_path} responseReceivedExtraInfo noop redirect from url {expected_url} to location {location}")
 
         response_guid = None
         response_done = False
@@ -1647,8 +1675,8 @@ class ClientSession(aiohttp.ClientSession):
 
         async def loadingFinished(args):
             request_id = args.get("requestId")
-            #logger.debug(f"req {request_id} loadingFinished " + str(args.get("requestId")))
-            #logger.debug(f"req {request_id} loadingFinished {json.dumps(args, indent=2)}")
+            #logger.debug(f"req {request_id_path} loadingFinished " + str(args.get("requestId")))
+            #logger.debug(f"req {request_id_path} loadingFinished {json.dumps(args, indent=2)}")
             if request_id != expected_request_id:
                 return
             event_loadingFinished.set()
@@ -1660,8 +1688,10 @@ class ClientSession(aiohttp.ClientSession):
             request_id = request_id_by_frame_id[frame_id]
             guid = args["guid"]
             request_id_by_guid[guid] = request_id
+            loader_id = loader_id_by_request_id[request_id]
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
-            #logger.debug(f"req {request_id} downloadWillBegin {json.dumps(args, indent=2)}")
+            #logger.debug(f"req {request_id_path} downloadWillBegin {json.dumps(args, indent=2)}")
 
             # response_data was set by responseReceived
             # in most cases, responseReceived is called before downloadWillBegin
@@ -1675,7 +1705,7 @@ class ClientSession(aiohttp.ClientSession):
 
             if args == None:
                 # this should never happen
-                raise Exception(f"req {request_id} downloadWillBegin: args == None")
+                raise Exception(f"req {request_id_path} downloadWillBegin: args == None")
 
             # no. use response_guid
             #response_filepath = self._downloads_path + "/" + response_guid
@@ -1688,8 +1718,8 @@ class ClientSession(aiohttp.ClientSession):
                 #logger.debug(f"downloadWillBegin: ignoring download from {repr(url)} != {repr(expected_url)}")
                 return
                 # FIXME why? is expected_url a static variable?
-                logger.debug(f"req {request_id} downloadWillBegin {guid} {json.dumps(args, indent=2)}")
-                raise Exception(f"req {request_id} downloadWillBegin: unexpected url: {url} != {expected_url}")
+                logger.debug(f"req {request_id_path} downloadWillBegin {guid} {json.dumps(args, indent=2)}")
+                raise Exception(f"req {request_id_path} downloadWillBegin: unexpected url: {url} != {expected_url}")
 
             # abort: Network.getResponseBody sleep
             event_downloadWillBegin.set()
@@ -1698,8 +1728,8 @@ class ClientSession(aiohttp.ClientSession):
                 if guid != response_guid:
                     # FIXME why? is response_guid a static variable?
                     # are downloads running in parallel?
-                    #raise Exception(f"req {request_id} downloadWillBegin: FIXME guid changed from {response_guid} to {guid}")
-                    logger.debug(f"req {request_id} downloadWillBegin: guid changed from {response_guid} to {guid}")
+                    #raise Exception(f"req {request_id_path} downloadWillBegin: FIXME guid changed from {response_guid} to {guid}")
+                    logger.debug(f"req {request_id_path} downloadWillBegin: guid changed from {response_guid} to {guid}")
                 # downloadWillBegin event is fired many many times for the same download
                 #return
             response_guid = guid
@@ -1708,9 +1738,10 @@ class ClientSession(aiohttp.ClientSession):
 
             if response_data:
                 # response_data was set by responseReceived
+                logger.debug(f"req {request_id_path} downloadWillBegin: response_data is set -> calling finish_download_response")
                 await finish_download_response(response_data, download_data)
             else:
-                logger.debug(f"req {request_id} downloadWillBegin: response_data is missing -> waiting for responseReceived event")
+                logger.debug(f"req {request_id_path} downloadWillBegin: response_data is missing -> waiting for responseReceived event")
 
         # called from downloadWillBegin or responseReceived
         # in most cases, responseReceived comes before downloadWillBegin
@@ -1720,17 +1751,18 @@ class ClientSession(aiohttp.ClientSession):
 
             url = download_data["url"]
             guid = download_data["guid"]
+            request_id = request_id_by_guid[guid]
+            loader_id = loader_id_by_request_id[request_id]
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
-            response_guid = guid
-
-            logger.debug(f"finish_download_response {guid} {json.dumps(download_data, indent=2)}")
+            #logger.debug(f"req {request_id_path} finish_download_response {json.dumps(download_data, indent=2)}")
 
             response_filename = download_data["suggestedFilename"]
             if not response_filename:
-                logger.debug(f"finish_download_response {guid} {json.dumps(download_data, indent=2)}")
+                logger.debug(f"req {request_id_path} finish_download_response {json.dumps(download_data, indent=2)}")
                 raise Exception(f"finish_download_response: empty response_filename: {repr(response_filename)}")
 
-            logger.debug(f"finish_download_response: {guid} -> {response_filename}")
+            logger.debug(f"req {request_id_path} finish_download_response guid {guid} -> filename {response_filename}")
 
             # wait some time for download to complete
 
@@ -1739,19 +1771,21 @@ class ClientSession(aiohttp.ClientSession):
             for i in range(60):
                 await asyncio.sleep(1)
                 if response_done:
-                    logger.debug(f"finish_download_response: download done")
+                    logger.debug(f"req {request_id_path} finish_download_response download done")
                     break
 
             if not response_done:
-                logger.debug(f"finish_download_response: FIXME download is not complete. keep track of downloadProgress events")
+                logger.debug(f"req {request_id_path} finish_download_response FIXME download is not complete. keep track of downloadProgress events")
                 await asyncio.sleep(9999999999999)
 
             # dont read file, it could be too large for RAM
             response_body = None
 
+            response_guid = guid
+
             response_item = (response_data, response_body, response_filename, response_guid)
 
-            logger.debug(f"finish_download_response: response_queue.put")
+            logger.debug(f"req {request_id_path} finish_download_response response_queue.put")
             await response_queue.put(response_item)
 
             # FIXME keep track of downloadProgress events
@@ -1767,20 +1801,22 @@ class ClientSession(aiohttp.ClientSession):
             nonlocal response_received
             guid = args["guid"]
             request_id = request_id_by_guid[guid]
+            loader_id = loader_id_by_request_id[request_id]
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
             if self._debug2:
-                logger.debug(f"req {request_id} downloadProgress {guid} {json.dumps(args, indent=2)}")
+                logger.debug(f"req {request_id_path} downloadProgress {guid} {json.dumps(args, indent=2)}")
             if response_done:
                 # downloadProgress event is fired many many times after state completed
                 return
             if guid != response_guid:
                 # ignore
-                #logger.debug(f"req {request_id} downloadProgress: ignoring download {repr(guid)} != {repr(response_guid)}")
+                #logger.debug(f"req {request_id_path} downloadProgress: ignoring download {repr(guid)} != {repr(response_guid)}")
                 return
-                raise Exception(f"req {request_id} downloadProgress: unexpected guid: {guid} != {response_guid}")
+                raise Exception(f"req {request_id_path} downloadProgress: unexpected guid: {guid} != {response_guid}")
             state = args["state"]
             if state == "completed":
                 response_done = True
-                logger.debug(f"req {request_id} downloadProgress: completed")
+                logger.debug(f"req {request_id_path} downloadProgress: completed")
                 # FIXME on "downloadProgress: completed", stop waiting in downloadWillBegin
                 # put response_item here
                 # stop downloadWillBegin from waiting / putting to queue
@@ -1793,12 +1829,12 @@ class ClientSession(aiohttp.ClientSession):
                 total = args["totalBytes"]
                 if received != total:
                     progress = received / total
-                    logger.debug(f"req {request_id} downloadProgress: inProgress {received} / {total} = {progress * 100:.0f}%")
+                    logger.debug(f"req {request_id_path} downloadProgress: inProgress {received} / {total} = {progress * 100:.0f}%")
                 response_received = received
             # FIXME handle failed downloads
             else:
-                logger.debug(f"req {request_id} downloadProgress {guid} {json.dumps(args, indent=2)}")
-                raise NotImplementedError(f"req {request_id} downloadProgress: FIXME handle download state {state}")
+                logger.debug(f"req {request_id_path} downloadProgress {guid} {json.dumps(args, indent=2)}")
+                raise NotImplementedError(f"req {request_id_path} downloadProgress: FIXME handle download state {state}")
 
         async def targetCreated(args):
             # this is called on creation of iframe, frame, tab, ...
