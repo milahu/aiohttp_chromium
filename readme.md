@@ -24,9 +24,9 @@ import aiohttp_chromium as aiohttp
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        async with session.get('http://httpbin.org/get') as resp:
-            print(resp.status)
-            print(await resp.text())
+        async with session.get('http://httpbin.org/get') as response:
+            print(response.status)
+            print(await response.text())
 
 asyncio.run(main())
 ```
@@ -86,8 +86,7 @@ possible solutions
 
 ## todo
 
-- add support for "click to download file" with `async with resp._click(elem) as resp:` when there is no url for `async with session.get(url, referrer=referrer) as resp:`
-- remove tempfiles on session close and on error
+- add support for "click to download file" with `async with response._click(elem) as response:` when there is no url for `async with session.get(url, referrer=referrer) as response:`
 - add support for streams: request streams, response streams
   - currently, `session.get` only works for "short and small" requests and responses, but not for infinite streams
   - implementing this is non-trivial, because chromium does not expose streams over the [Chrome DevTools Protocol (CDP)](https://chromedevtools.github.io/devtools-protocol/)
