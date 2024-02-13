@@ -1498,16 +1498,28 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"responseReceived: response is visible page")
             logger.debug(f"responseReceived: Network.getResponseBody sleep")
 
-            # TODO better
-            # fix: No data found for resource with given identifier
-            sleep_before_getResponseBody = 2
+            # wait for loadingFinished or downloadWillBegin event
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody waiting for loadingFinished or downloadWillBegin")
             try:
-                await asyncio.wait_for(event_downloadWillBegin.wait(), sleep_before_getResponseBody)
-                logger.debug(f"responseReceived {request_id} Network.getResponseBody sleep aborted by downloadWillBegin")
-                return
+                wait_loadingFinished = event_loadingFinished.wait()
+                wait_downloadWillBegin = event_downloadWillBegin.wait()
+                done_wait, pending_wait = await asyncio.wait(
+                    map(asyncio.create_task, [
+                        wait_loadingFinished, # inline content
+                        wait_downloadWillBegin, # file download
+                    ]),
+                    timeout=999, # TODO
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if wait_downloadWillBegin in done_wait:
+                    logger.debug(f"responseReceived {request_id} Network.getResponseBody got downloadWillBegin -> return")
+                    # TODO? cleanup wait_loadingFinished
+                    return
+                logger.debug(f"responseReceived {request_id} Network.getResponseBody got loadingFinished -> continue")
+                # TODO? cleanup wait_downloadWillBegin
             except TimeoutError:
-                # done sleep_before_getResponseBody
-                pass
+                # TODO?
+                raise
 
             # FIXME this can hang, producing a TimeoutError
             # better use Network.takeResponseBodyForInterceptionAsStream
@@ -1589,6 +1601,19 @@ class ClientSession(aiohttp.ClientSession):
         response_done = False
 
         event_downloadWillBegin = asyncio.Event()
+
+        # fix: Network.getResponseBody gets only the first 65536 bytes = 64 * 1024
+        # https://github.com/ChromeDevTools/devtools-protocol/issues/44
+        # You should wait for the Network.loadingFinished event before fetching response body.
+
+        event_loadingFinished = asyncio.Event()
+
+        async def loadingFinished(args):
+            #logger.debug("loadingFinished " + str(args.get("requestId")))
+            #logger.debug(f"loadingFinished {json.dumps(args, indent=2)}")
+            if args.get("requestId") != expected_request_id:
+                return
+            event_loadingFinished.set()
 
         # FIXME not fired in rare cases
         async def downloadWillBegin(args):
@@ -1796,6 +1821,7 @@ class ClientSession(aiohttp.ClientSession):
 
         await target.add_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
         await target.add_cdp_listener("Network.responseReceived", responseReceived)
+        await target.add_cdp_listener("Network.loadingFinished", loadingFinished)
 
         listen_extra_infos_request = False
         listen_extra_infos_response = True
@@ -1916,6 +1942,7 @@ class ClientSession(aiohttp.ClientSession):
 
                 await target.remove_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
                 await target.remove_cdp_listener("Network.responseReceived", responseReceived)
+                await target.remove_cdp_listener("Network.loadingFinished", loadingFinished)
 
                 if listen_extra_infos_request:
                     await target.remove_cdp_listener("Network.requestWillBeSentExtraInfo", requestWillBeSentExtraInfo)
