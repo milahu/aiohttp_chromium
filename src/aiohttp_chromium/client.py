@@ -1404,7 +1404,17 @@ class ClientSession(aiohttp.ClientSession):
 
             return False
 
+        # fix: responseReceived is called again after file download
+        # and fails at Network.getResponseBody
+        done_responseReceived = False
+
         async def responseReceived(args):
+
+            nonlocal done_responseReceived
+
+            if done_responseReceived:
+                return
+
             nonlocal url
             nonlocal response_data
             nonlocal download_data
@@ -1496,6 +1506,8 @@ class ClientSession(aiohttp.ClientSession):
                     await finish_download_response(response_data, download_data)
                 else:
                     logger.debug(f"responseReceived: response is file download -> waiting for downloadWillBegin event")
+
+                done_responseReceived = True
 
                 # dont read file, it could be too large for RAM
                 #response_body = None
