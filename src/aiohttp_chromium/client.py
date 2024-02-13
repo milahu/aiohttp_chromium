@@ -1252,13 +1252,13 @@ class ClientSession(aiohttp.ClientSession):
             # self._old_driver_windows list is empty
             pass
         # create a new window
-        logger.debug(f"session._get_free_driver_window: loop...")
+        #logger.debug(f"session._get_free_driver_window: loop...")
         while True:
             try:
                 driver_window = await self._driver.switch_to.new_window('tab')
                 return driver_window
             except Exception as e:
-                logger.debug(f"session._get_free_driver_window: {type(e)} {e}")
+                logger.debug(f"session._get_free_driver_window: {type(e)} {e} -> retrying")
                 await asyncio.sleep(2)
                 #raise
         return driver_window
@@ -1284,6 +1284,7 @@ class ClientSession(aiohttp.ClientSession):
         expected_url = url.split("#", 1)[0]
         driver = self._driver
         logger.debug(f"_request: url = {repr(url)}")
+        #logger.debug(f"_request: expected_url = {repr(expected_url)}")
 
         driver_window = await self._get_free_driver_window()
 
@@ -1583,6 +1584,8 @@ class ClientSession(aiohttp.ClientSession):
             except TimeoutError:
                 # TODO?
                 raise
+                # no: No resource with given identifier found
+                #logger.debug(f"req {request_id_path} responseReceived Network.getResponseBody got TimeoutError -> continue")
 
             # FIXME this can hang, producing a TimeoutError
             # better use Network.takeResponseBodyForInterceptionAsStream
