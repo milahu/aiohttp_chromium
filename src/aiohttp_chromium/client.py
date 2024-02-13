@@ -1784,21 +1784,6 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"targetInfoChanged {json.dumps(args, indent=2)}")
             logger.debug("targetInfoChanged")
 
-        async def requestIntercepted(params):
-            nonlocal target
-            print("requestIntercepted", args)
-            url = params["request"]["url"]
-            _params = {"interceptionId": params['interceptionId']}
-            #if params.get('responseStatusCode') in [301, 302, 303, 307, 308]:
-            if False:
-                # redirected request
-                return await target.execute_cdp_cmd("Network.continueInterceptedRequest", _params)
-            fulfill_params = {"headers":params["request"]["headers"]}
-            fulfill_params["headers"]["test"] = "Hello World!"
-            fulfill_params.update(_params)
-            await target.execute_cdp_cmd("Network.continueInterceptedRequest", fulfill_params)
-            print(url)
-
         target = await driver.current_target
         #logger.debug(f"target.id {target.id}")
 
@@ -1862,20 +1847,6 @@ class ClientSession(aiohttp.ClientSession):
         await base_target.execute_cdp_cmd("Browser.setDownloadBehavior", args)
         await base_target.add_cdp_listener("Browser.downloadWillBegin", downloadWillBegin)
         await base_target.add_cdp_listener("Browser.downloadProgress", downloadProgress)
-
-
-
-        if False:
-
-            # intercept requests
-
-            args = {
-                "patterns": [{"urlPattern": "*"}],
-                #"interceptionStage": "HeadersReceived",
-            }
-            await target.execute_cdp_cmd("Network.setRequestInterception", args)
-
-            await target.add_cdp_listener("Network.requestIntercepted", requestIntercepted)
 
 
 
