@@ -1559,13 +1559,13 @@ class ClientSession(aiohttp.ClientSession):
             if expected_request_id:
                 # filter by request_id
                 if request_id != expected_request_id:
-                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
+                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} of request {request_id} != {expected_request_id}")
                     return
             else:
                 # expected_request_id is unknown
                 # filter by request_url
                 if request_url != expected_url:
-                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
+                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} != {expected_url}")
                     # this can be REALLY verbose...
                     if ignore_url(request_url):
                         return
