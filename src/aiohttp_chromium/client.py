@@ -1893,10 +1893,17 @@ class ClientSession(aiohttp.ClientSession):
         async def downloadWillBegin(args):
 
             frame_id = args["frameId"]
-            request_id = request_id_by_frame_id[frame_id]
+
+            # FIXME KeyError events can appear in wrong order
+            #request_id = request_id_by_frame_id[frame_id]
+            request_id = request_id_by_frame_id.get(frame_id, "FIXME_missing_request_id")
+
             guid = args["guid"]
-            request_id_by_guid[guid] = request_id
-            loader_id = loader_id_by_request_id[request_id]
+            if request_id != "FIXME_missing_request_id":
+                request_id_by_guid[guid] = request_id
+                loader_id = loader_id_by_request_id[request_id]
+            else:
+                loader_id = None
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             #logger.debug(f"req {request_id_path} downloadWillBegin {json.dumps(args, indent=2)}")
@@ -1963,8 +1970,13 @@ class ClientSession(aiohttp.ClientSession):
 
             url = download_data["url"]
             guid = download_data["guid"]
-            request_id = request_id_by_guid[guid]
-            loader_id = loader_id_by_request_id[request_id]
+
+            # FIXME KeyError events can appear in wrong order
+            #request_id = request_id_by_guid[guid]
+            #loader_id = loader_id_by_request_id[request_id]
+            request_id = request_id_by_guid.get(guid, "FIXME_unknown_request_id")
+            loader_id = loader_id_by_request_id.get(request_id, None)
+
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             #logger.debug(f"req {request_id_path} finish_download_response {json.dumps(download_data, indent=2)}")
@@ -2012,8 +2024,13 @@ class ClientSession(aiohttp.ClientSession):
             nonlocal response_done
             nonlocal response_received
             guid = args["guid"]
-            request_id = request_id_by_guid[guid]
-            loader_id = loader_id_by_request_id[request_id]
+
+            # FIXME KeyError
+            #request_id = request_id_by_guid[guid]
+            #loader_id = loader_id_by_request_id[request_id]
+            request_id = request_id_by_guid.get(guid, "FIXME_unknown_request_id")
+            loader_id = loader_id_by_request_id.get(request_id, None)
+
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
             if self._debug2:
                 logger.debug(f"req {request_id_path} downloadProgress {guid} {json.dumps(args, indent=2)}")
