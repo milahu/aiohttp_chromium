@@ -600,18 +600,17 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         # FIXME filesize can be unknown: self._filesize == None
         assert self._filesize != None
 
-        while True:
-            try:
-                if os.path.getsize(self._filepath) == self._filesize:
-                    return
-            except FileNotFoundError:
-                pass
-            #except Exception as e:
-            #    logger.debug(f"ClientResponse._wait_complete: e {type(e)} {e}")
-            sleep_step = 1 # TODO expose
-            await asyncio.sleep(sleep_step)
-
-        # FIXME implement timeout
+        async with asyncio.timeout(timeout):
+            while True:
+                try:
+                    if os.path.getsize(self._filepath) == self._filesize:
+                        return
+                except FileNotFoundError:
+                    pass
+                #except Exception as e:
+                #    logger.debug(f"ClientResponse._wait_complete: e {type(e)} {e}")
+                sleep_step = 1 # TODO expose
+                await asyncio.sleep(sleep_step)
 
         # TODO better
         # wait for "download completed" event
