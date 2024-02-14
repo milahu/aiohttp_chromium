@@ -1358,6 +1358,10 @@ class ClientSession(aiohttp.ClientSession):
         async def requestPaused(args):
             request_id = args.get("networkId")
             #logger.debug(f"requestPaused {request_id} {json.dumps(args, indent=2)}")
+
+            #loader_id = loader_id_by_request_id[request_id]
+            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+
             #interception_id = args.get("requestId")
             #resource_type = args.get("resourceType") # "Document" or ...
             #frame_id = args.get("frameId")
@@ -1585,7 +1589,10 @@ class ClientSession(aiohttp.ClientSession):
         async def requestWillBeSentExtraInfo(args):
             request_id = args["requestId"]
             #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo " + json.dumps(args, indent=2))
-            loader_id = loader_id_by_request_id[request_id]
+
+            #loader_id = loader_id_by_request_id[request_id]
+            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             if use_requestPaused:
@@ -1835,7 +1842,10 @@ class ClientSession(aiohttp.ClientSession):
             nonlocal expected_request_id
             nonlocal expected_url
             request_id = args["requestId"]
-            loader_id = loader_id_by_request_id[request_id]
+
+            #loader_id = loader_id_by_request_id[request_id]
+            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             # FIXME how dow we know request_url_by_id[request_id]
