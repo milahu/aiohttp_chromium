@@ -1,0 +1,68 @@
+https://stackoverflow.com/questions/33412504/lldb-python-c-bindings-async-step-instructions
+
+https://github.com/llvm/llvm-project/blob/main/lldb/examples/python/process_events.py
+
+
+
+https://github.com/llvm/llvm-project/tree/main/lldb/examples/functions
+
+
+
+https://github.com/nodejs/llnode/blob/main/src/llnode_api.cc
+
+An lldb plugin for Node.js and V8, which enables inspection of JavaScript states for insights into Node.js processes and their core dumps.
+
+The llnode plugin adds the ability to inspect JavaScript stack frames, objects, source code and more to the standard C/C++ debugging facilities when working with Node.js processes or core dumps in LLDB.
+
+debug javascript code with lldb
+
+
+
+https://github.com/google/lldb-eval/blob/master/lldb-eval/runner.cc
+
+lldb-eval is a library for evaluating expressions in the debugger context
+
+lldb-eval is an LLDB-based library for evaluating debug expressions in the context of the debugged process. All modern debuggers support evaluating expressions to inspect the target process state: print out variables, access member fields, etc. lldb-eval is basically a REPL-like library, that allows to inspect the process state using the familiar C++ syntax. The primary use-case is IDE integration (for example, Stadia for Visual Studio).
+
+lldb-eval makes a trade-off between performance and completeness, focusing on performance. It features a custom expression parser and relies purely on the debug information, aiming at sub-millisecond evaluation speed.
+
+
+
+https://lldb.llvm.org/use/tutorial.html
+
+https://github.com/vadimcn/codelldb
+A native debugger extension for VSCode based on LLDB
+
+https://github.com/ant4g0nist/lisa.py
+An Exploit Dev Swiss Army Knife
+import lldb
+
+
+
+https://github.com/gdbinit/lldbinit
+A gdbinit clone for LLDB
+
+
+
+python bindings to lldb
+
+debugger = lldb.SBDebugger.Create()
+
+https://github.com/search?q=lldb.SBDebugger.Create+language%3APython&ref=opensearch&type=code
+
+https://github.com/Polidea/SiriusObfuscator/blob/b0e590d8130e97856afe578869b83a209e2b19be/SymbolExtractorAndRenamer/swift/utils/symbolicate-linux-fatal
+
+https://github.com/lanl/scout/blob/a7b66c9bb6940625005c05bc350491a443a23866/llvm/tools/lldb/utils/lui/lui.py
+
+https://github.com/gilligan/vim-lldb/blob/f4525e12edef82c116a6a7e1d9229ac5364fb279/python-vim-lldb/lldb_controller.py
+
+https://github.com/proger/darwinkit/blob/87e19989788a551c7454b746cc8fd105dafb3060/lldb-run.py
+
+https://github.com/qt-creator/qt-creator/blob/1af555ad09be169bebc7525e4bb7e10ad4de271d/share/qtcreator/debugger/lldbbridge.py
+
+
+
+
+https://github.com/llvm/llvm-project/blob/main/lldb/examples/python/process_events.py
+
+

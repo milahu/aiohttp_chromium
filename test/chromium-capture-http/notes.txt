@@ -1,0 +1,24 @@
+curl -s -N "https://httpbin.dev/drip?code=200&numbytes=5&duration=5"
+
+
+
+scriptable debugger: radare or gdb?
+
+radare takes 3 minutes to load the chromium binary
+
+import r2pipe 
+import time
+t1=time.time(); r = r2pipe.open('/nix/store/nsx8iznrwqwb4mwy3l9n4alvcd381z5k-ungoogled-chromium-unwrapped-120.0.6099.224/libexec/chromium/chromium'); t2=time.time()
+t2-t1 # == 176.60041761398315
+t1=time.time(); r = r2pipe.open('/nix/store/nsx8iznrwqwb4mwy3l9n4alvcd381z5k-ungoogled-chromium-unwrapped-120.0.6099.224/libexec/chromium/chromium' , ["-d", 'rarun2', 'program=/nix/store/nsx8iznrwqwb4mwy3l9n4alvcd381z5k-ungoogled-chromium-unwrapped-120.0.6099.224/libexec/chromium/chromium', 'arg1=--user-data-dir=/home/user/src/milahu/opensubtitles-scraper/aiohttp_chromium/test/chromium-capture-http/user-data', 'arg2=--disable-seccomp-sandbox', 'arg3=--single-process', 'arg4=https://httpbin.dev/drip?code=200&numbytes=5&duration=5' ] ); t2=time.time()
+t2-t1 # == 
+
+
+https://github.com/radareorg/radare2/issues/11341
+Simplify r2pipe argument passing
+
+https://book.rada.re/first_steps/basic_debugger_session.html
+
+https://book.rada.re/debugger/intro.html
+
+https://r2wiki.readthedocs.io/en/latest/home/radare2-python-scripting/
