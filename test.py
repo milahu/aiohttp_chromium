@@ -23,12 +23,12 @@ async def main():
     )
     async with aiohttp.ClientSession(**args) as session:
         url = "http://httpbin.org/get" # json response
-        url = "https://nowsecure.nl/#relax" # captcha challenge
+        #url = "https://nowsecure.nl/#relax" # captcha challenge
         # TODO test more captchas https://nopecha.com/demo
         # file download
         # Content-Disposition: attachment; filename="test.json"
         # https://github.com/postmanlabs/httpbin/issues/240
-        url = "http://httpbin.org/response-headers?Content-Type=text/plain;%20charset=UTF-8&Content-Disposition=attachment;%20filename%3d%22test.json%22"
+        #url = "http://httpbin.org/response-headers?Content-Type=text/plain;%20charset=UTF-8&Content-Disposition=attachment;%20filename%3d%22test.json%22"
         # FIXME redirect to http 404 page https://www.opensubtitles.org/en/msg-dmca
         #url = "https://dl.opensubtitles.org/en/download/sub/6773940"
         print("session.get", url)

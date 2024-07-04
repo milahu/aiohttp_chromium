@@ -1,5 +1,5 @@
 from collections import UserDict
-from asyncio import Event
+import asyncio
 
 
 class async_dict(UserDict):
@@ -38,16 +38,23 @@ class async_dict(UserDict):
         try:
             event = self._pending[key]
         except KeyError:
-            event = Event()
+            event = asyncio.Event()
             self._pending[key] = event
         await event.wait()
         return super().__getitem__(key)
 
     async def pop(self, key):
         """Remove key and return its value, blocking until populated."""
-        value = await self.get(key)
+        value = await self.__getitem__(key)
         super().__delitem__(key)
         return value
+
+    async def get(self, key, default=None, timeout=None):
+        try:
+            async with asyncio.timeout(timeout):
+                return await self.__getitem__(key)
+        except TimeoutError:
+            return default
 
     def is_waiting(self, key) -> bool:
         """Return True if there is a task waiting for key."""

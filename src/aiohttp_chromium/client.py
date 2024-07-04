@@ -141,6 +141,7 @@ from yarl import URL
 
 from . import extensions
 #import .extensions
+from ._async_dict import async_dict
 
 
 
@@ -353,6 +354,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
             session,
             _driver_window,
             _request_id,
+            _request_id_path,
             _status,
             _status_text,
             _headers,
@@ -367,6 +369,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         self._driver = session._driver
         self._driver_window = _driver_window
         self._request_id = _request_id
+        self._request_id_path = _request_id_path
 
         self.status = _status
 
@@ -519,7 +522,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         # reader.iter_chunked
         # reader.iter_any
 
-        logger.debug(f"ClientResponse.content")
+        logger.debug(f"req {self._request_id_path} ClientResponse.content")
 
         if self._content is None:
             if self._filepath:
@@ -543,7 +546,7 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
                 # and only (await response.content.read()) should wait until the response is complete
                 if not os.path.exists(self._filepath):
                     d = os.path.dirname(self._filepath)
-                    logger.debug(f"ClientResponse.content: FIXME missing file {repr(self._filepath)}. files in {repr(d)}: {os.listdir(d)}")
+                    logger.debug(f"req {self._request_id_path} ClientResponse.content: FIXME missing file {repr(self._filepath)}. files in {repr(d)}: {os.listdir(d)}")
                 # NOTE self._filepath can be an incomplete download
                 # TODO when download is complete, signal from cdp event listenr to response
                 self._content = open(self._filepath, "rb")
@@ -551,31 +554,31 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
             else:
                 if self._body is None and self._body_str != None:
-                    logger.debug(f"ClientResponse.content: _body")
+                    logger.debug(f"req {self._request_id_path} ClientResponse.content: _body")
                     # str -> bytes
                     self._body = b"" # fix: self.get_encoding requires self._body
-                    logger.debug(f"ClientResponse.content: get_encoding")
+                    logger.debug(f"req {self._request_id_path} ClientResponse.content: get_encoding")
                     encoding = self.get_encoding()
-                    logger.debug(f"ClientResponse.content: _body_str.encode")
+                    logger.debug(f"req {self._request_id_path} ClientResponse.content: _body_str.encode")
                     self._body = self._body_str.encode(encoding)
                 elif self._body is None and self._body_str == None:
                     # response is empty
                     self._body = b""
-                logger.debug(f"ClientResponse.content: _content")
+                logger.debug(f"req {self._request_id_path} ClientResponse.content: _content")
                 # FIXME use a dummy protocol. no need to pause/resume reading
                 #protocol = BaseProtocol() # TODO verify
-                logger.debug(f"ClientResponse.content: protocol")
+                logger.debug(f"req {self._request_id_path} ClientResponse.content: protocol")
                 protocol = ResponseHandler(loop=self._loop) # TODO verify
-                logger.debug(f"ClientResponse.content: StreamReader")
+                logger.debug(f"req {self._request_id_path} ClientResponse.content: StreamReader")
                 self._StreamReader = aiohttp.streams.StreamReader
                 self._content = self._StreamReader(
                     protocol,
                     limit=len(self._body), # TODO verify
                 )
-                logger.debug(f"ClientResponse.content: _content.feed_data")
+                logger.debug(f"req {self._request_id_path} ClientResponse.content: _content.feed_data")
                 self._content.feed_data(self._body)
                 self._content.feed_eof()
-        logger.debug(f"ClientResponse.content: done")
+        logger.debug(f"req {self._request_id_path} ClientResponse.content: done")
         return self._content
 
     """
@@ -1138,6 +1141,7 @@ class ClientSession(aiohttp.ClientSession):
         # TODO expose
         # disable debug messages, these are too verbose
         logging.getLogger("websockets.client").setLevel(logging.WARNING)
+        logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
         options.add_argument(f"--user-data-dir={self._chromium_user_data_dir}")
 
@@ -1344,49 +1348,60 @@ class ClientSession(aiohttp.ClientSession):
         # downloadWillBegin: frameId, guid
         # downloadProgress: guid
 
-        request_url_by_id = dict()
-        request_id_by_frame_id = dict()
-        request_id_by_guid = dict()
-        loader_id_by_request_id = dict()
-        loader_id_by_frame_id = dict()
-        loader_id_by_guid = dict()
+        request_url_by_id = async_dict()
+        request_id_by_frame_id = async_dict()
+        request_id_by_guid = async_dict()
+        loader_id_by_request_id = async_dict()
+        #loader_id_by_frame_id = async_dict()
+        #loader_id_by_guid = async_dict()
 
         use_requestPaused = True
 
         # handle the Fetch.requestPaused event
 
+        # FIXME this fails on infinite streams. limitation of CDP
+        # fix: run chromium in a debugger (lldb) and trace the BIO_read and BIO_write functions
+
+        # TODO middlewares ...
+
         async def requestPaused(args):
+
             request_id = args.get("networkId")
-            #logger.debug(f"requestPaused {request_id} {json.dumps(args, indent=2)}")
 
-            #loader_id = loader_id_by_request_id[request_id]
-            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+            loader_id = await loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id", timeout=5)
 
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+
+            #logger.debug(f"req {request_id_path} requestPaused {json.dumps(args, indent=2)}")
             #interception_id = args.get("requestId")
             #resource_type = args.get("resourceType") # "Document" or ...
             #frame_id = args.get("frameId")
+            # TODO loader_id
+            # TODO request_id_path
 
             url = args["request"]["url"]
             responseStatusCode = args.get("responseStatusCode")
-            logger.debug(f"requestPaused {request_id} status {responseStatusCode} from url {url}")
+            logger.debug(f"req {request_id_path} requestPaused status {responseStatusCode}")
             _args = {"requestId": args['requestId']}
             if responseStatusCode in [301, 302, 303, 307, 308]:
-                logger.debug(f"requestPaused {request_id} handling redirect")
+                logger.debug(f"req {request_id_path} requestPaused handling redirect")
                 return await target.execute_cdp_cmd("Fetch.continueResponse", _args)
 
             # fix: Can only get response body on requests captured after headers received.
             # fix: The request must be paused in the HeadersReceived stage
             if not "responseHeaders" in args:
                 # request is before the "HeadersReceived" stage
-                logger.debug(f"requestPaused {request_id} headers not received -> Fetch.continueResponse")
+                logger.debug(f"req {request_id_path} requestPaused headers not received -> Fetch.continueResponse")
                 return await target.execute_cdp_cmd("Fetch.continueResponse", _args)
 
             # headers received. now we can get the response body
-            logger.debug(f"requestPaused {request_id} headers received -> getting the response body")
-            #logger.debug(f"requestPaused {request_id} {json.dumps(args, indent=2)}")
+            logger.debug(f"req {request_id_path} requestPaused headers received -> getting the response body")
+            #logger.debug(f"req {request_id_path} requestPaused {json.dumps(args, indent=2)}")
 
             # no. this requires interceptionId
             #stream = await driver.execute_cdp_cmd("Network.takeResponseBodyForInterceptionAsStream", _args)
+
+            logger.debug(f"req {request_id_path} requestPaused reading the response stream until eof ...")
 
             # no: websockets.exceptions.ConnectionClosedError
             #stream = await target.execute_cdp_cmd("Fetch.takeResponseBodyAsStream", _args)
@@ -1395,7 +1410,7 @@ class ClientSession(aiohttp.ClientSession):
 
             stream_handle = stream["stream"]
             # stream_handle is just a number
-            #logger.debug(f"requestPaused {request_id} stream", stream)
+            #logger.debug(f"req {request_id_path} requestPaused stream", stream)
 
             # TODO implement aiohttp.streams.StreamReader
             # dont store the whole response in memory
@@ -1404,9 +1419,12 @@ class ClientSession(aiohttp.ClientSession):
             # async with get_reader() as reader:
             #     async for slice in reader.iter_any():
             #         print(slice)
-            data_eof = False
+
+            #data_eof = False
             body = None
-            while data_eof == False:
+            #while data_eof == False:
+
+            while True:
                 _args = {
                     "handle": stream_handle,
                     # error: Read offset is specificed for a stream that does not support random access
@@ -1415,7 +1433,12 @@ class ClientSession(aiohttp.ClientSession):
                 }
                 data = await target.execute_cdp_cmd("IO.read", _args)
                 # the EOF event is passed in a separate read with data == ""
-                data_eof = data["eof"]
+                #data_eof = data["eof"]
+                #if data_eof:
+                if data["eof"]:
+                    assert data["data"] == "", ("stream is eof but received data: " + repr(data["data"]))
+                    logger.debug(f"req {request_id_path} requestPaused eof")
+                    break
                 # base64Encoded
                 data = base64.b64decode(data["data"]) if data["base64Encoded"] else data["data"]
                 # data can be str or bytes
@@ -1427,10 +1450,10 @@ class ClientSession(aiohttp.ClientSession):
                 # empty data is always passed as empty string
                 # fix: TypeError: can't concat str to bytes
                 if len(data) > 0:
-                    logger.debug(f"requestPaused {request_id} data {len(data)} {repr(data[:100])}")
+                    logger.debug(f"req {request_id_path} requestPaused data {len(data)} {repr(data[:20])}...")
                     body += data
-                if data_eof:
-                    logger.debug(f"requestPaused {request_id} eof")
+
+            #logger.debug(f"req {request_id_path} requestPaused reading the response stream until eof done")
 
             # no: Unable to continue request as is after body is taken
             """
@@ -1491,11 +1514,18 @@ class ClientSession(aiohttp.ClientSession):
             return
             """
 
+            # Fetch.fulfillRequest: send the response to chromium
+            logger.debug(f"req {request_id_path} requestPaused calling fulfillRequest")
+
             # we dont need the raw body any more. encode it to base64
             if type(body) == str:
-                body = body.encode("utf8")
+                body = body.encode("utf8") # FIXME get the actual encoding
+
+            #body = None # test: empty response
+
             # fix: TypeError: Object of type bytes is not JSON serializable
-            body = base64.b64encode(body).decode("ascii")
+            body = base64.b64encode(body).decode("ascii") if body != None else ""
+
             _args = {
                 "requestId": args['requestId'],
                 "responseCode": args["responseStatusCode"],
@@ -1503,6 +1533,7 @@ class ClientSession(aiohttp.ClientSession):
                 "responseHeaders": args["responseHeaders"],
                 "body": body,
             }
+
             if args["responseStatusText"] != "":
                 # empty string throws "Invalid http status code or phrase"
                 _args["responsePhrase"] = args["responseStatusText"]
@@ -1519,7 +1550,7 @@ class ClientSession(aiohttp.ClientSession):
             """
             body = await target.execute_cdp_cmd("Fetch.getResponseBody", _args, timeout=1)
             body = base64.b64decode(body["body"]) if body["base64Encoded"] else body["body"]
-            logger.debug(f"requestPaused {request_id} body", body[:100])
+            logger.debug(f"req {request_id_path} requestPaused body", body[:100])
 
             # ?
             # no: This check is taking longer than expected. Check your Internet connection and refresh the page if the issue persists.
@@ -1547,29 +1578,30 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"req {request_id_path} requestWillBeSent {json.dumps(args, indent=2)}")
             #logger.debug(f"req {request_id_path} requestWillBeSent url {request_url}")
 
-            if use_requestPaused:
-                logger.debug(f"requestWillBeSent {request_id} {request_url}")
-                #logger.debug(f"requestWillBeSent {request_id} {json.dumps(args, indent=2)}")
-                return
-
             # note: request_url can change due to protocol upgrade from http to https
             request_url_by_id[request_id] = request_url
 
             frame_id = args["frameId"]
             request_id_by_frame_id[frame_id] = request_id
             loader_id_by_request_id[request_id] = loader_id
-            loader_id_by_frame_id[frame_id] = loader_id
+            #loader_id_by_frame_id[frame_id] = loader_id
+
+            if use_requestPaused:
+                logger.debug(f"req {request_id_path} requestWillBeSent url {request_url}")
+                #logger.debug(f"req {request_id_path} requestWillBeSent {json.dumps(args, indent=2)}")
+                return
 
             if expected_request_id:
                 # filter by request_id
                 if request_id != expected_request_id:
-                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} of request {request_id} != {expected_request_id}")
+                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url}")
+                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} of request {request_id} != {expected_request_id}")
                     return
             else:
                 # expected_request_id is unknown
                 # filter by request_url
                 if request_url != expected_url:
-                    #logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} != {expected_url}")
+                    logger.debug(f"req {request_id_path} requestWillBeSent ignoring url {request_url} != {expected_url}")
                     # this can be REALLY verbose...
                     if ignore_url(request_url):
                         return
@@ -1591,22 +1623,23 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo " + json.dumps(args, indent=2))
 
             #loader_id = loader_id_by_request_id[request_id]
-            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+            loader_id = await loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id", timeout=5)
 
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             if use_requestPaused:
-                #logger.debug(f"requestWillBeSentExtraInfo {request_id}")
-                logger.debug(f"requestWillBeSentExtraInfo {request_id} {json.dumps(args, indent=2)}")
+                #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo")
+                logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo {json.dumps(args, indent=2)}")
                 return
 
-            request_url = request_url_by_id[request_id]
+            request_url = await request_url_by_id.get(request_id, timeout=5)
             #logger.debug(f"req {request_id_path} requestWillBeSentExtraInfo {json.dumps(args, indent=2)}")
 
         def ignore_url(url):
             if url.startswith("chrome-extension://"):
                 return True
             if url.startswith("data:image/png;base64,"):
+                # captcha image
                 return True
             if url.startswith("https://cdn.jsdelivr.net/"):
                 return True
@@ -1642,16 +1675,19 @@ class ClientSession(aiohttp.ClientSession):
 
             nonlocal done_responseReceived
 
+            request_id = args["requestId"]
+            loader_id = args["loaderId"] if args["loaderId"] != request_id else None
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+
+            #logger.debug(f"req {request_id_path} responseReceived {json.dumps(args, indent=2)}")
+
             if use_requestPaused:
                 request_id = args["requestId"]
-                logger.debug(f"responseReceived {request_id}")
+                logger.debug(f"req {request_id_path} responseReceived")
                 return
 
-            request_id = args["requestId"]
-            #logger.debug(f"req {request_id} responseReceived {json.dumps(args, indent=2)}")
-
             if done_responseReceived:
-                logger.debug(f"req {request_id} responseReceived ignoring done_responseReceived")
+                logger.debug(f"req {request_id_path} responseReceived ignoring done_responseReceived")
                 return
 
             nonlocal url
@@ -1665,14 +1701,11 @@ class ClientSession(aiohttp.ClientSession):
 
             if args == None:
                 # this should never happen
-                raise Exception(f"req {request_id} responseReceived {responseReceived_num}: args == None")
+                raise Exception(f"req {request_id_path} responseReceived {responseReceived_num}: args == None")
 
             #logger.debug(f"responseReceived {json.dumps(args, indent=2)}")
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
-            request_id = args["requestId"]
-            loader_id = args["loaderId"] if args["loaderId"] != request_id else None
-            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             #logger.debug(f"req {request_id_path} responseReceived {json.dumps(args, indent=2)}")
 
@@ -1681,9 +1714,8 @@ class ClientSession(aiohttp.ClientSession):
                     logger.debug(f"req {request_id_path} responseReceived ignoring response {response_status}")
                 return
 
-            try:
-                request_url = request_url_by_id[request_id]
-            except KeyError:
+            request_url = await request_url_by_id.get(request_id, timeout=5)
+            if request_url == None:
                 # this can happen during cleanup
                 # TODO verify
                 logger.debug(f"req {request_id_path} responseReceived ignoring response with unknown url")
@@ -1844,14 +1876,15 @@ class ClientSession(aiohttp.ClientSession):
             request_id = args["requestId"]
 
             #loader_id = loader_id_by_request_id[request_id]
-            loader_id = loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id")
+            loader_id = await loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id", timeout=5)
 
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
             # FIXME how dow we know request_url_by_id[request_id]
             # -> requestWillBeSent
             # but url can be missing!
-            request_url = request_url_by_id.get(request_id)
+            #request_url = request_url_by_id.get(request_id)
+            request_url = await request_url_by_id.get(request_id, timeout=5)
             if request_id != expected_request_id:
                 return
             #logger.debug(f"req {request_id_path} responseReceivedExtraInfo {json.dumps(args, indent=2)}")
@@ -1860,6 +1893,7 @@ class ClientSession(aiohttp.ClientSession):
             location = args["headers"].get("location")
             if location:
                 # TODO populate response.history = list of intermediary responses
+                logger.debug(f"req {request_id_path} responseReceivedExtraInfo got location header {location!r} from url {expected_url!r}")
                 new_expected_url = str(URL(expected_url).join(URL(location)))
 
                 # quickfix: upgrade redirect to https
@@ -1891,12 +1925,19 @@ class ClientSession(aiohttp.ClientSession):
         event_loadingFinished = asyncio.Event()
 
         async def loadingFinished(args):
-            request_id = args.get("requestId")
+
+            request_id = args["requestId"]
+
+            #loader_id = loader_id_by_request_id[request_id]
+            loader_id = await loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id", timeout=5)
+
+            request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+
             #logger.debug(f"req {request_id_path} loadingFinished " + str(args.get("requestId")))
             #logger.debug(f"req {request_id_path} loadingFinished {json.dumps(args, indent=2)}")
 
             if use_requestPaused:
-                logger.debug(f"loadingFinished " + str(args.get("requestId")))
+                logger.debug(f"req {request_id_path} loadingFinished")
                 return
 
             #logger.debug("loadingFinished " + str(args.get("requestId")))
@@ -1912,7 +1953,7 @@ class ClientSession(aiohttp.ClientSession):
 
             # FIXME KeyError events can appear in wrong order
             #request_id = request_id_by_frame_id[frame_id]
-            request_id = request_id_by_frame_id.get(frame_id, "FIXME_missing_request_id")
+            request_id = await request_id_by_frame_id.get(frame_id, "FIXME_missing_request_id", timeout=5)
 
             guid = args["guid"]
             if request_id != "FIXME_missing_request_id":
@@ -1925,7 +1966,7 @@ class ClientSession(aiohttp.ClientSession):
             #logger.debug(f"req {request_id_path} downloadWillBegin {json.dumps(args, indent=2)}")
 
             if use_requestPaused:
-                logger.debug(f"downloadWillBegin")
+                logger.debug(f"req {request_id_path} downloadWillBegin")
                 return
 
             # response_data was set by responseReceived
@@ -1990,8 +2031,8 @@ class ClientSession(aiohttp.ClientSession):
             # FIXME KeyError events can appear in wrong order
             #request_id = request_id_by_guid[guid]
             #loader_id = loader_id_by_request_id[request_id]
-            request_id = request_id_by_guid.get(guid, "FIXME_unknown_request_id")
-            loader_id = loader_id_by_request_id.get(request_id, None)
+            request_id = await request_id_by_guid.get(guid, "FIXME_unknown_request_id", timeout=5)
+            loader_id = await loader_id_by_request_id.get(request_id, "FIXME_unknown_loader_id", timeout=5)
 
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
 
@@ -2044,8 +2085,14 @@ class ClientSession(aiohttp.ClientSession):
             # FIXME KeyError
             #request_id = request_id_by_guid[guid]
             #loader_id = loader_id_by_request_id[request_id]
-            request_id = request_id_by_guid.get(guid, "FIXME_unknown_request_id")
-            loader_id = loader_id_by_request_id.get(request_id, None)
+
+            #request_id = await request_id_by_guid.get(guid, "FIXME_unknown_request_id", timeout=5)
+            #loader_id = await loader_id_by_request_id.get(request_id, "FIXME_missing_loader_id", timeout=5)
+
+            # TODO async dict: wait for a future key-value pair in dict
+            # https://stackoverflow.com/questions/57821695/python-asyncio-asynchronously-fetch-data-by-key-from-a-dict-when-the-key-becomes
+            # Event?
+            # Queue + filter + put back into queue?
 
             request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
             if self._debug2:
@@ -2235,14 +2282,23 @@ class ClientSession(aiohttp.ClientSession):
                     #await response_ready.wait()
                     response_item = await response_queue.get()
 
-                    logger.debug(f"_request: response_queue.get")
+                    # TODO
+                    request_id_path = "TODO_request_id_path_from_response_data"
+                    logger.debug(f"req {request_id_path} _request: response_data={json.dumps(response_data, indent=2)}")
+                    """
+                    request_id = args["requestId"]
+                    loader_id = args["loaderId"] if args["loaderId"] != request_id else None
+                    request_id_path = f"{loader_id}/{request_id}" if loader_id else request_id
+                    """
+
+                    logger.debug(f"req {request_id_path} _request: response_queue.get")
 
                     # TODO better?
                     (response_data, response_body, response_filename, response_guid) = response_item
 
                     resp_status = response_data["response"]["status"]
 
-                    logger.debug(f"_request: status {resp_status}")
+                    logger.debug(f"req {request_id_path} _request: status {resp_status}")
 
                     #if resp_status in (301, 302, 303, 307, 308) and allow_redirects:
                     # 403 = too many requests -> solve captcha and follow redirect
@@ -2302,6 +2358,8 @@ class ClientSession(aiohttp.ClientSession):
                 assert response_done == True
                 download_is_complete = True
 
+                request_id_path = "TODO_request_id_path_from_response_data"
+
                 resp = ClientResponse(
                     method,
                     url,
@@ -2314,6 +2372,7 @@ class ClientSession(aiohttp.ClientSession):
                     session=self,
                     _driver_window=driver_window,
                     _request_id=response_data["requestId"],
+                    _request_id_path=request_id_path,
                     _status=response_data["response"]["status"],
                     _status_text=response_data["response"]["statusText"],
                     # TODO

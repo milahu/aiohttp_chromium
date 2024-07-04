@@ -75,10 +75,30 @@ async def main():
         # no effect
         # FIXME Network.streamResourceContent and Network.dataReceived is not working
         # too late?
-        data = await driver.execute_cdp_cmd("Network.streamResourceContent", _args)
+        # data: bufferedData: Data that has been buffered until streaming is enabled.
+        print("driver.execute_cdp_cmd")
+        try:
+            data = await driver.execute_cdp_cmd("Network.streamResourceContent", _args, timeout=2)
+            print(f"requestWillBeSent {url}: driver streamResourceContent data", repr(data))
+        except (CDPError, TimeoutError) as e:
+            print(f"requestWillBeSent {url}: driver streamResourceContent error", e)
+            pass
 
-        # bufferedData: Data that has been buffered until streaming is enabled.
-        print(f"requestWillBeSent {url}: streamResourceContent data", repr(data))
+        print("target.execute_cdp_cmd")
+        try:
+            data = await target.execute_cdp_cmd("Network.streamResourceContent", _args, timeout=2)
+            print(f"requestWillBeSent {url}: target streamResourceContent data", repr(data))
+        except (CDPError, TimeoutError) as e:
+            print(f"requestWillBeSent {url}: target streamResourceContent error", e)
+            pass
+
+        print("base_target.execute_cdp_cmd")
+        try:
+            data = await base_target.execute_cdp_cmd("Network.streamResourceContent", _args, timeout=2)
+            print(f"requestWillBeSent {url}: base_target streamResourceContent data", repr(data))
+        except (CDPError, TimeoutError) as e:
+            print(f"requestWillBeSent {url}: base_target streamResourceContent error", e)
+            pass
 
         # no: No data found for resource with given identifier
         # this only works in responseReceived
@@ -110,7 +130,7 @@ async def main():
         _args = {
             "requestId": args["requestId"],
         }
-        data = await driver.execute_cdp_cmd("Network.streamResourceContent", _args)
+        data = await driver.execute_cdp_cmd("Network.streamResourceContent", _args, timeout=2)
 
         # bufferedData: Data that has been buffered until streaming is enabled.
         print(f"responseReceived {url}: streamResourceContent data", repr(data))
@@ -167,12 +187,17 @@ async def main():
 
     #await target.add_cdp_listener("Network.responseReceivedExtraInfo", responseReceivedExtraInfo)
 
-    #await target.add_cdp_listener("Network.dataReceived", dataReceived)
+    await base_target.add_cdp_listener("Network.dataReceived", dataReceived)
+    await target.add_cdp_listener("Network.dataReceived", dataReceived)
     await driver.add_cdp_listener("Network.dataReceived", dataReceived)
 
 
 
     url = "https://httpbin.org/get" # json response
+
+    # FIXME got no response for method: "Network.streamResourceContent"
+    url = "http://127.0.0.1:5125" # long-polling-http-server.py
+
     #url = "https://nowsecure.nl/#relax" # captcha challenge
     # TODO test more captchas https://nopecha.com/demo
     # file download

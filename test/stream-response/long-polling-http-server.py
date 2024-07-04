@@ -35,9 +35,15 @@ logger = logging.getLogger()
 
 async def handle_request(request):
     headers = {
-        "content-type": "application/octet-stream; charset=binary",
-        "content-transfer-encoding": "Binary",
+        # initiate a file download
+        #"content-type": "application/octet-stream; charset=binary",
+
+        #"content-transfer-encoding": "Binary",
+
         # note: no content-length header
+
+        # show text in browser
+        "content-type": "text/plain",
     }
     response = aiohttp.web.StreamResponse(
         headers=headers,
@@ -46,7 +52,8 @@ async def handle_request(request):
     await response.prepare(request)
     while True:
         t = time.time()
-        chunk = f"{t}\n".encode("ascii")
+        #chunk = f"{t}\n".encode("ascii")
+        chunk = f"findme findme findme findme {t}\n".encode("ascii")
         try:
             await response.write(chunk)
         except ConnectionResetError:

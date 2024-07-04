@@ -95,7 +95,7 @@ async def main():
     # https://github.com/NixOS/nixpkgs/pull/119945
     # -> set LLDB_DEBUGSERVER_PATH to absolute path of lldb-server
     # get absolute path of lldb-server
-    # TODO shorter?
+    # TODO shorter? shutil.which? what is os.get_exec_path
     lldb_server_exe = next(filter(lambda p: os.path.exists(p), map(lambda p: p + "/lldb-server", os.get_exec_path())))
     os.environ["LLDB_DEBUGSERVER_PATH"] = lldb_server_exe
     # https://bugs.launchpad.net/ubuntu/+source/llvm-toolchain-10/+bug/1894159

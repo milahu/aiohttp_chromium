@@ -31,10 +31,67 @@ async def main():
 asyncio.run(main())
 ```
 
+hint: top-level await in a python repl works with `python -m asyncio`
+
 see also
 
 - [aiohttp docs](https://docs.aiohttp.org/en/stable/client.html)
 - [test.py](test.py)
+
+
+
+### session.close
+
+when `aiohttp.ClientSession` is \*not\* used as a context manager,
+then you must call `session.close()` to cleanup the session
+
+```py
+import asyncio
+
+#import aiohttp
+import aiohttp_chromium as aiohttp
+
+async def main():
+
+    #session = aiohttp.ClientSession() # original aiohttp API
+    session = await aiohttp.ClientSession()
+
+    async with session.get('http://httpbin.org/get') as response:
+        print(response.status)
+        print(await response.text())
+
+    await session.close()
+
+asyncio.run(main())
+```
+
+
+
+### response.close
+
+when `session.get` is \*not\* used as a context manager,
+then you must call `response.close()` to cleanup the response
+
+```py
+import asyncio
+
+#import aiohttp
+import aiohttp_chromium as aiohttp
+
+async def main():
+
+    session = await aiohttp.ClientSession()
+
+    response = await session.get('http://httpbin.org/get')
+    print(response.status)
+    print(await response.text())
+    #response.close() # original aiohttp API
+    #await response.close() # TODO implement
+    await response.__aexit__(None, None, None)
+    await session.close()
+
+asyncio.run(main())
+```
 
 
 
@@ -54,6 +111,7 @@ so the `selenium` interface is hidden in `response._driver`
 ## examples
 
 - [crx4chrome-scraper](https://github.com/milahu/crx4chrome-scraper)
+- [opensubtitles-scraper](https://github.com/milahu/opensubtitles-scraper)
 
 
 
@@ -86,6 +144,7 @@ possible solutions
 
 ## todo
 
+- dont open a million tabs if all requests fail due to broken internet connection a la "failed to resolve host" -- log: `_request: exception TimeoutError: got no response for method: "Page.navigate"`
 - add support for "click to download file" with `async with response._click(elem) as response:` when there is no url for `async with session.get(url, referrer=referrer) as response:`
 - add support for streams: request streams, response streams
   - currently, `session.get` only works for "short and small" requests and responses, but not for infinite streams
