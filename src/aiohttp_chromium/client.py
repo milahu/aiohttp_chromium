@@ -1538,6 +1538,13 @@ class ClientSession(aiohttp.ClientSession):
             if location:
                 # TODO populate response.history = list of intermediary responses
                 new_expected_url = str(URL(expected_url).join(URL(location)))
+
+                # quickfix: upgrade redirect to https
+                # see also doc/redirect-http-https.txt
+                if new_expected_url.startswith("http:"):
+                    logger.debug(f"req {request_id_path} responseReceivedExtraInfo upgrading redirect to https")
+                    new_expected_url = "https:" + new_expected_url[5:]
+
                 if expected_url != new_expected_url:
                     logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} changing expected_url from {expected_url} to {new_expected_url}")
                     expected_url = new_expected_url
