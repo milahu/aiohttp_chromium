@@ -1862,12 +1862,12 @@ class ClientSession(aiohttp.ClientSession):
                 # TODO populate response.history = list of intermediary responses
                 new_expected_url = str(URL(expected_url).join(URL(location)))
                 if expected_url != new_expected_url:
+                    logger.debug(f"req {request_id_path} responseReceivedExtraInfo following redirect from {expected_url} to {new_expected_url}")
                     expected_url = new_expected_url
                     # reverse lookup from url to id
                     # https://stackoverflow.com/a/2569076/10440128
                     # mostly None ...
                     new_expected_request_id = next((id for id, url in request_url_by_id.items() if url == expected_url), None)
-                    logger.debug(f"req {request_id_path} responseReceivedExtraInfo following redirect from {expected_url} to {new_expected_url}")
                     expected_request_id = new_expected_request_id
                 else:
                     raise NotImplementedError(f"req {request_id_path} responseReceivedExtraInfo noop redirect from url {expected_url} to location {location}")
