@@ -1,0 +1,22 @@
+opensubtitles.org sends 2 redirects
+
+1.
+  from https://www.opensubtitles.org/en/search/subs
+  to    http://www.opensubtitles.org/en/captcha2/redirect-%7Cen%7Csearch%7Csubs
+
+2.
+  from http://www.opensubtitles.org/en/captcha2/redirect-%7Cen%7Csearch%7Csubs
+  to   http://www.opensubtitles.org/en/captcha/redirect-%7Cen%7Csearch%7Csubs
+
+and the only relevant response i get is
+responseReceived response_url=https://www.opensubtitles.org/en/captcha/redirect-%7Cen%7Csearch%7Csubs response_status=429
+
+which only differs in protocol: http vs https
+ http://www.opensubtitles.org/en/captcha/redirect-%7Cen%7Csearch%7Csubs
+https://www.opensubtitles.org/en/captcha/redirect-%7Cen%7Csearch%7Csubs
+
+so we need fuzzy url matching in responseReceived
+because chromium can either/or
+
+- actually use http protocol from redirect
+- upgrade from http to https protocol
