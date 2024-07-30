@@ -816,6 +816,8 @@ class ClientSession(aiohttp.ClientSession):
             # TODO copy more kwargs from aiohttp.ClientSession.__init__
 
             _chromium_extensions = default_chromium_extensions,
+
+            _headless = False,
         ):
 
         logger.debug(f"ClientSession: init")
@@ -833,6 +835,8 @@ class ClientSession(aiohttp.ClientSession):
         self.cookie_jar = cookie_jar
 
         self._chromium_extensions = _chromium_extensions
+
+        self._headless = _headless
 
         self._keep_env_keys = [
             "PATH",
@@ -1162,7 +1166,10 @@ class ClientSession(aiohttp.ClientSession):
         # based on FlareSolverr/src/undetected_chromedriver/__init__.py
         language = "en-US"
         options.add_argument("--lang=%s" % language)
-        #options.add_argument("--headless=new")
+
+        if self._headless:
+            options.add_argument("--headless=new")
+
         #options.add_argument("--window-size=1920,1080")
         #options.add_argument("--start-maximized") # not working
         #options.add_argument("--no-sandbox") # unsupported
