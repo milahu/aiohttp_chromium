@@ -1818,6 +1818,7 @@ class ClientSession(aiohttp.ClientSession):
         # generic exception handler to cleanup timeout_handle
         try:
 
+            # NOTE timeout applies only to request, not to response
             # FIXME timeout is blocking exceptions
             with timeout_handle.timer():
 
@@ -1850,7 +1851,24 @@ class ClientSession(aiohttp.ClientSession):
                         await asyncio.sleep(5)
                         pass
 
+        except BaseException as e:
+            # cleanup timeout_handle
+            timeout_handle.close()
+            if timeout_handle_handle:
+                timeout_handle_handle.cancel()
+                timeout_handle_handle = None
 
+            # mark the window as "old"
+            # so it can be re-used or closed by session
+            self._old_driver_windows.append(driver_window)
+
+            raise
+
+        # removed: try
+        if True:
+
+            # removed: with
+            if True:
 
                 response_item = None
 
@@ -1958,19 +1976,6 @@ class ClientSession(aiohttp.ClientSession):
                 )
 
                 return resp
-
-        except BaseException as e:
-            # cleanup timeout_handle
-            timeout_handle.close()
-            if timeout_handle_handle:
-                timeout_handle_handle.cancel()
-                timeout_handle_handle = None
-
-            # mark the window as "old"
-            # so it can be re-used or closed by session
-            self._old_driver_windows.append(driver_window)
-
-            raise
 
 
 
