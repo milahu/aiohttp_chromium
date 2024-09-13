@@ -1276,6 +1276,7 @@ class ClientSession(aiohttp.ClientSession):
             referrer=None,
             timeout=30,
             allow_redirects=True,
+            listeners=None,
             #**kwargs,
         ) -> ClientResponse:
 
@@ -1778,6 +1779,24 @@ class ClientSession(aiohttp.ClientSession):
 
         await target.add_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
         await target.add_cdp_listener("Network.responseReceived", responseReceived)
+
+        if listeners is None:
+            listeners = dict()
+
+        for key, val in listeners.items():
+            if key == "responseReceived":
+                key = "Network.responseReceived"
+            elif key == "requestWillBeSent":
+                key = "Network.requestWillBeSent"
+            #await target.add_cdp_listener(key, val)
+            # wrap the listener
+            # TODO test this with multiple listeners
+            # is the relay_cdp_event function overwritten?
+            # do we have to copy the function?
+            async def relay_cdp_event(args):
+                return await val(args, driver, target)
+            await target.add_cdp_listener(key, relay_cdp_event)
+        # TODO cleanup? are listeners cleaned up automatically?
 
         listen_extra_infos_request = False
         listen_extra_infos_response = True
