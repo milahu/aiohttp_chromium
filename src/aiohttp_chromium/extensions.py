@@ -298,6 +298,37 @@ class Ublock(ChromiumExtension):
 
 
 
+class DarkReader(ChromiumExtension):
+
+    name = "darkreader"
+    website = "https://github.com/darkreader/darkreader"
+    source = {
+        "url": "https://github.com/darkreader/darkreader/releases/download/v4.9.92/darkreader-chrome-mv3.zip",
+        "sha256": "2a4fdfa612ff5e9832c6dc4f0bdb361b75c0a0a3f559898d2e579ff6e7cc6c17",
+    }
+    pinned = True
+
+    async def patch(self):
+
+        file_path = "background/index.js"
+
+        self.log(f"patch: patching {file_path}")
+
+        # TODO refactor patching of files
+        with open(self.path + "/" + file_path, "r") as f:
+            text = f.read()
+
+        # dont open help tab on first start
+        text = text.replace(
+            "chrome.tabs.create({url: getHelpURL()});",
+            "// chrome.tabs.create({url: getHelpURL()});",
+        )
+
+        with open(self.path + "/" + file_path, "w") as f:
+            f.write(text)
+
+
+
 class ClearDownloads(ChromiumExtension):
 
     name = "clear_downloads"

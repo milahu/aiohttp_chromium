@@ -721,6 +721,7 @@ class ClientResponseHeaders():
 
 default_chromium_extensions = [
     "Ublock", # adblocker
+    "DarkReader", # nightmode
     #"Buster", # captcha solver
     #"EditThisCookie", # manually edit/import/export cookies
     "NoDownloadShelf", # remove downloads shelf
