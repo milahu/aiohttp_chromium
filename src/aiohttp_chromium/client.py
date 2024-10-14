@@ -1277,7 +1277,7 @@ class ClientSession(aiohttp.ClientSession):
             referrer=None,
             timeout=30,
             allow_redirects=True,
-            listeners=None,
+            _cdp_listeners=None,
             #**kwargs,
         ) -> ClientResponse:
 
@@ -1781,10 +1781,10 @@ class ClientSession(aiohttp.ClientSession):
         await target.add_cdp_listener("Network.requestWillBeSent", requestWillBeSent)
         await target.add_cdp_listener("Network.responseReceived", responseReceived)
 
-        if listeners is None:
-            listeners = dict()
+        if _cdp_listeners is None:
+            _cdp_listeners = dict()
 
-        for key, val in listeners.items():
+        for key, val in _cdp_listeners.items():
             if key == "responseReceived":
                 key = "Network.responseReceived"
             elif key == "requestWillBeSent":
