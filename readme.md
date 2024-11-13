@@ -100,6 +100,11 @@ possible solutions
     - google has hidden the discussion: "You don't have permission to access this content. For access, try contacting the group's owners and managers"
       - see [snapshot](doc/Fetch.fulfillRequest.and.very.long.body.html) from [archive.org 2024-06-23](https://web.archive.org/web/20240623221934/https://groups.google.com/g/chrome-debugging-protocol/c/w65z0cMqgvc)
       - hey google? thanks for reminding us that google is a bunch of fascists, engaging in sabotage and censorship
+  - https://issues.chromium.org/issues/332570739 - Streaming body for Fetch.fulfillRequest() CDP API
+    - Fetch.fullfillRequest() only provides an option to set the 'body' response as a base64-encoded string. Of course, this does not work well for larger response body. Similar to the streaming takeResponseBodyAsStream(), it would be great if there was a fullfillRequest() option with a stream, fullfillRequestWithStream()
+      - Perhaps this could be done by expanding the IO APIs to have a IO.write() option that allows sending a streaming data to the browser. I realize this is probably fairly low-priority, but would make Fetch request interception more efficient, especially when dealing with larger responses/chunked response of unknown size, etc...
+    - The feature request makes sense but currently it is a low priority for us.
+    - see [snapshot](doc/Streaming.body.for.Fetch.fulfillRequest.CDP.API.332570739.Chromium.html)
 - graphical interface where the user can solve challenges: captchas, unexpected responses, ...
 - integration with captcha solving services
 - remove unfree dependencies
