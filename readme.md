@@ -97,6 +97,9 @@ possible solutions
     - there's no streaming support for Fetch network interception
     - there is Fetch.takeResponseBodyAsStream and IO.read, but not Fetch.giveResponseBodyAsStream and IO.write
     - there is Network.takeResponseBodyForInterceptionAsStream and IO.read, but not Network.giveResponseBodyForInterceptionAsStream and IO.write
+    - google has hidden the discussion: "You don't have permission to access this content. For access, try contacting the group's owners and managers"
+      - see [snapshot](doc/Fetch.fulfillRequest.and.very.long.body.html) from [archive.org 2024-06-23](https://web.archive.org/web/20240623221934/https://groups.google.com/g/chrome-debugging-protocol/c/w65z0cMqgvc)
+      - hey google? thanks for reminding us that google is a bunch of fascists, engaging in sabotage and censorship
 - graphical interface where the user can solve challenges: captchas, unexpected responses, ...
 - integration with captcha solving services
 - remove unfree dependencies
