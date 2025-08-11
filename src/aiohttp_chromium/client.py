@@ -819,6 +819,8 @@ class ClientSession(aiohttp.ClientSession):
             _chromium_extensions = default_chromium_extensions,
 
             _headless = False,
+
+            _chromium_options = {},
         ):
 
         logger.debug(f"ClientSession: init")
@@ -836,6 +838,8 @@ class ClientSession(aiohttp.ClientSession):
         self.cookie_jar = cookie_jar
 
         self._chromium_extensions = _chromium_extensions
+
+        self._user_chromium_options = _chromium_options
 
         self._headless = _headless
 
@@ -1162,7 +1166,8 @@ class ClientSession(aiohttp.ClientSession):
         # default window is too large
         #options.add_argument("--window-size=750,520")
         # (1080 x 720) / 1.5 = 720 x 480
-        options.add_argument("--window-size=720,480")
+        w, h = self._user_chromium_options.get("window_size", (720, 480))
+        options.add_argument(f"--window-size={w},{h}")
 
         # based on FlareSolverr/src/undetected_chromedriver/__init__.py
         language = "en-US"
