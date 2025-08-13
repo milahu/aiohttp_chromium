@@ -223,27 +223,8 @@ def get_free_port() -> int:
 
 
 
-# FIXME update aiohttp
-# await self._resp.wait_for_close()
 class _RequestContextManager(_BaseRequestContextManager[ClientResponse]):
-    __slots__ = ()
-
-    async def __aexit__(
-            self,
-            exc_type: Optional[Type[BaseException]],
-            exc: Optional[BaseException],
-            tb: Optional[TracebackType],
-        ) -> None:
-        # We're basing behavior on the exception as it can be caused by
-        # user code unrelated to the status of the connection.  If you
-        # would like to close a connection you must do that
-        # explicitly.  Otherwise connection error handling should kick in
-        # and close/recycle the connection as required.
-        #logger.debug("_RequestContextManager.__aexit__: self._resp.release")
-        self._resp.release()
-        # FIXME not called
-        #logger.debug("_RequestContextManager.__aexit__: self._resp.wait_for_close")
-        await self._resp.wait_for_close()
+    pass
 
 
 
