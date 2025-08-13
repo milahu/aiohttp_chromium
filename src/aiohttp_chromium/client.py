@@ -458,20 +458,6 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
 
 
-    async def __aexit__(
-            self,
-            exc_type: Optional[Type[BaseException]],
-            exc_val: Optional[BaseException],
-            exc_tb: Optional[TracebackType],
-        ) -> None:
-        # similar to _RequestContextManager, we do not need to check
-        # for exceptions, response object can close connection
-        # if state is broken
-        self.release()
-        await self.wait_for_close()
-
-
-
     async def text(self, encoding: Optional[str] = None, errors: str = "strict") -> str:
         """Read response payload and decode."""
         if self._body_str:
@@ -627,16 +613,16 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
 
 
 
-    def release(self):
-        # moved to: async def wait_for_close
-        #logger.debug(f"ClientResponse.release: noop")
-        #debug_callstack("ClientResponse.release")
-        return
-
-    async def wait_for_close(self):
+    async def __aexit__(
+            self,
+            exc_type: Optional[Type[BaseException]],
+            exc: Optional[BaseException],
+            tb: Optional[TracebackType],
+        ) -> None:
+        print(f"ClientResponse.__aexit__ 665")
         # called by _RequestContextManager.__aexit__
-        #logger.debug(f"ClientResponse.wait_for_close: closing driver_window {self._driver_window}")
-        #debug_callstack("ClientResponse.wait_for_close")
+        #logger.debug(f"ClientResponse.__aexit__: closing driver_window {self._driver_window}")
+        #debug_callstack("ClientResponse.__aexit__")
 
         # FIXME no. recycle old tabs
         """
