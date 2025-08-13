@@ -1270,6 +1270,10 @@ class ClientSession(aiohttp.ClientSession):
         driver = self._driver
         logger.debug(f"_request: url = {repr(url)}")
 
+        # FIXME handle kwargs
+        logger.debug(f"_request: headers = {headers!r}")
+        logger.debug(f"_request: trace_request_ctx = {trace_request_ctx!r}")
+
         driver_window = await self._get_free_driver_window()
 
         # note: we have to pass activate=True
