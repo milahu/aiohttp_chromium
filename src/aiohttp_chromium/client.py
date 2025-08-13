@@ -1300,7 +1300,9 @@ class ClientSession(aiohttp.ClientSession):
 
         driver_window = await self._get_free_driver_window()
 
-        await self._driver.switch_to.window(driver_window)
+        # note: we have to pass activate=True
+        # https://github.com/kaliiiiiiiiii/Selenium-Driverless/issues/342
+        await self._driver.switch_to.window(driver_window, activate=True)
 
         if type(timeout) in {int, float}:   
             timeout = ClientTimeout(total=timeout)
