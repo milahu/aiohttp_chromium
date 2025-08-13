@@ -368,6 +368,8 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         self._driver_window = _driver_window
         self._request_id = _request_id
 
+        self.method = method
+
         self.status = _status
 
         self.reason = _status_text
