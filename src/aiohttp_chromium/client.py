@@ -1284,6 +1284,11 @@ class ClientSession(aiohttp.ClientSession):
             referrer=None,
             timeout=30,
             allow_redirects=True,
+
+            # FIXME handle kwargs
+            headers=None,
+            trace_request_ctx=None,
+
             _cdp_listeners=None,
             #**kwargs,
         ) -> ClientResponse:
