@@ -1439,18 +1439,14 @@ class ClientSession(aiohttp.ClientSession):
 
             response_done = True
 
-            logger.debug(f"responseReceived: status {response_status}: url {response_url}")
+            logger.debug(f"responseReceived {request_id} status {response_status}: url {response_url}")
             #logger.debug(f"responseReceived {request_id} {request_url} {json.dumps(args, indent=2)}")
 
             #response_type = args["response"]["headers"]["Content-Type"]
 
             response_data = args
-            #logger.debug(f"response_data: " + json.dumps(response_data, indent=2))
-            #logger.debug(f"response headers: " + json.dumps(response_data["response"]["headers"], indent=2))
-            if False:
-                logger.debug(f"response headers:")
-                for key, val in response_data["response"]["headers"].items():
-                    logger.debug(f"response header: {key}: {val}")
+            #logger.debug(f"responseReceived {request_id} response_data: " + json.dumps(response_data, indent=2))
+            #logger.debug(f"responseReceived {request_id} response headers: " + json.dumps(response_data["response"]["headers"], indent=2))
 
             def dict_get_ci(_dict, key, default=None):
                 """
@@ -1480,7 +1476,7 @@ class ClientSession(aiohttp.ClientSession):
                     # download_data was set by downloadWillBegin
                     await finish_download_response(response_data, download_data)
                 else:
-                    logger.debug(f"responseReceived: response is file download -> waiting for downloadWillBegin event")
+                    logger.debug(f"responseReceived {request_id} response is file download -> waiting for downloadWillBegin event")
 
                 # dont read file, it could be too large for RAM
                 #response_body = None
@@ -1488,8 +1484,8 @@ class ClientSession(aiohttp.ClientSession):
 
             #else:
             # response is inline content (html, txt, jpg, ...)
-            #logger.debug(f"responseReceived: response is visible page")
-            logger.debug(f"responseReceived: Network.getResponseBody sleep")
+            #logger.debug(f"responseReceived {request_id} response is visible page")
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody sleep")
 
             # TODO better
             # fix: No data found for resource with given identifier
@@ -1499,12 +1495,12 @@ class ClientSession(aiohttp.ClientSession):
             # better use Network.takeResponseBodyForInterceptionAsStream
             # instead of Network.getResponseBody
 
-            logger.debug(f"responseReceived: Network.getResponseBody ...")
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody ...")
             args = {
                 "requestId": args["requestId"],
             }
             res = await target.execute_cdp_cmd("Network.getResponseBody", args)
-            logger.debug(f"responseReceived: Network.getResponseBody done")
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody done")
             response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
             #logger.debug(f"len(response_body): {len(response_body)}")
             response_filename = None
@@ -1517,7 +1513,7 @@ class ClientSession(aiohttp.ClientSession):
             #response_item = (response_data, response_body, response_filename, response_filepath)
             response_item = (response_data, response_body, response_filename, response_guid)
 
-            logger.debug(f"responseReceived: response_queue.put")
+            logger.debug(f"responseReceived {request_id} response_queue.put")
             await response_queue.put(response_item)
             #logger.debug(f"responseReceived {response_status} {response_url} {response_type} " + repr(response_body[:20]) + "...")
 
@@ -1544,7 +1540,7 @@ class ClientSession(aiohttp.ClientSession):
                 # quickfix: upgrade redirect to https
                 # see also doc/redirect-http-https.txt
                 if new_expected_url.startswith("http:"):
-                    logger.debug(f"req {request_id_path} responseReceivedExtraInfo upgrading redirect to https")
+                    logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} upgrading redirect to https")
                     new_expected_url = "https:" + new_expected_url[5:]
 
                 if expected_url != new_expected_url:
