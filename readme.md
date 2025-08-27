@@ -62,9 +62,37 @@ the chromium window is grabbing focus
 
 this is an issue with the window manager
 
-workaround for the KDE plasma desktop:
-move the chromium window to a different desktop,
-and focus some window
+by default (`_headless=False, _prevent_focus_stealing=True`)
+this is already fixed in `_enable_prevent_focus_stealing_kde` for the KDE plasma desktop
+
+manual fix on the KDE plasma desktop:
+KWin focus stealing prevention:
+window titlebar &rarr; rightclick &rarr; more actions &rarr; special settings for this window
+&rarr; add property &rarr; prevent unwanted activation &rarr; level: extreme &rarr; apply
+
+example KDE config file `~/.config/kwinrulesrc`
+
+```
+[General]
+count=1
+rules=28ef9b3f-6f35-4fbf-b2c6-b06d0fd959e3
+
+[28ef9b3f-6f35-4fbf-b2c6-b06d0fd959e3]
+Description=aiohttp_chromium: prevent focus stealing
+clientmachine=localhost
+fsplevel=4
+fsplevelrule=2
+types=1
+windowrole=browser
+windowrolematch=1
+wmclass=chromium-browser \(/run/user/1000/fetch\-subs\-[0-9]{8}T[0-9]{6}\.[0-9]+Z/chromium\-user\-data\) Chromium-browser
+wmclasscomplete=true
+wmclassmatch=3
+```
+
+`/run/user/1000/fetch\-subs\-[0-9]{8}T[0-9]{6}\.[0-9]+Z/chromium\-user\-data`
+is a regex for the chromium user-data directory path
+which is the `tempdir` argument for `ClientSession`
 
 chromium seems to have no
 [command line switch](https://peter.sh/experiments/chromium-command-line-switches/)
@@ -75,6 +103,7 @@ possible solutions
 - run chromium in a LD_PRELOAD wrapper
 - binary patching of the chromium executable
 - configure the window manager
+  - done for KDE plasma
 
 
 

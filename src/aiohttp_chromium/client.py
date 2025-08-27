@@ -34,6 +34,9 @@ import string
 import itertools
 import http.cookiejar
 import math
+import configparser
+import uuid
+from collections import OrderedDict
 
 from types import (
     SimpleNamespace,
@@ -766,6 +769,13 @@ class ClientSession(aiohttp.ClientSession):
             # then tempdir is not deleted on cleanup
             tempdir = None,
 
+            # with (_prevent_focus_stealing = True)
+            # use this regex to create one rule to match all instances
+            # when tempdir is set (tempdir != None)
+            # and this is unset (_tempdir_regex == None)
+            # then _prevent_focus_stealing will create a new rule for every new instance
+            # _tempdir_regex = None,
+
             # https://docs.aiohttp.org/en/stable/client_quickstart.html#streaming-response-content
             # all downloads are written to disk
             # and deleted on exit of the response context
@@ -790,6 +800,10 @@ class ClientSession(aiohttp.ClientSession):
             _headless = False,
 
             _chromium_options = {},
+
+            # in headful mode (_headless = False)
+            # prevent the chromium window from stealing focus
+            _prevent_focus_stealing = True,
         ):
 
         logger.debug(f"ClientSession: init")
@@ -812,6 +826,8 @@ class ClientSession(aiohttp.ClientSession):
 
         self._headless = _headless
 
+        self._prevent_focus_stealing = _prevent_focus_stealing
+
         self._keep_env_keys = [
             "PATH",
             # by default, run chromium on the main display
@@ -833,11 +849,26 @@ class ClientSession(aiohttp.ClientSession):
         # TODO remove files on cleanup
         self._cleanup_remove_files = []
 
+        # self._tempdir_regex = _tempdir_regex
+
         if not tempdir:
-            tempdir = tempfile.mkdtemp(prefix="aiohttp_chromium.")
+            tempdir_prefix = "aiohttp_chromium."
+            # this assumes that tempfile.mkdtemp appends 8 random chars after the prefix
+            tempdir_random_len = 8
+            tempdir = tempfile.mkdtemp(prefix=tempdir_prefix)
             self._cleanup_remove_files.append(tempdir)
+            actual_tempdir_prefix = tempdir[-tempdir_random_len-len(tempdir_prefix):-tempdir_random_len]
+            assert actual_tempdir_prefix == tempdir_prefix, f"bad tempdir format of tempdir {tempdir!r}"
+            # overwrite self._tempdir_regex
+            # self._tempdir_regex = re.escape(tempdir[:-tempdir_random_len]) + "[0-9a-zA-Z_]{" + str(tempdir_random_len) + "}"
         self.tempdir = tempdir
         logger.debug(f"ClientSession: using tempdir {self.tempdir}")
+
+        r"""
+        if not self._tempdir_regex:
+            # _tempdir_regex will work only for this instance
+            self._tempdir_regex = re.escape(self.tempdir)
+        """
 
         self.temp_home = f"{self.tempdir}/home"
         os.makedirs(self.temp_home, exist_ok=True)
@@ -940,8 +971,14 @@ class ClientSession(aiohttp.ClientSession):
 
     async def _start_chromium(self):
 
-        self._chromium_user_data_dir = f"{self.tempdir}/chromium-user-data"
+        self._chromium_user_data_dir = f"{self.tempdir}/aiohttp-chromium-user-data"
+        if self._prevent_focus_stealing:
+            self._chromium_user_data_dir += "-with-pfs"
         os.makedirs(self._chromium_user_data_dir)
+
+        # do this before creating the chromium window
+        if not self._headless and self._prevent_focus_stealing:
+            self._enable_prevent_focus_stealing()
 
         logger.debug(f"ClientSession: using chromium user-data-dir {self._chromium_user_data_dir}")
 
@@ -1214,6 +1251,122 @@ class ClientSession(aiohttp.ClientSession):
 
         for ext in self._chromium_extensions:
             await ext.post_start()
+
+
+
+    def _enable_prevent_focus_stealing(self):
+        # TODO use a more strict check to detect KDE window manager
+        is_kde_wm = shutil.which("qdbus") != None
+        if is_kde_wm:
+            return self._enable_prevent_focus_stealing_kde()
+        # TODO add more window managers
+        logger.debug(f"_enable_prevent_focus_stealing_kde: reading config file {kwinrulesrc_path!r}")
+
+
+
+    def _enable_prevent_focus_stealing_kde(self):
+        # https://docs.kde.org/stable5/en/kwin/kcontrol/windowbehaviour/#focus-focusstealing
+        # https://github.com/sandorex/kcfg
+        # https://discuss.kde.org/t/can-kwin-reload-window-rules-kwinrulesrc-dynamically-via-cli-without-full-reconfigure/34136
+        # no, this creates too many rules
+        # chromium_user_data_dir_regex = self._tempdir_regex + re.escape("/aiohttp-chromium-user-data")
+        chromium_user_data_dir_regex = r".*/aiohttp-chromium-user-data-with-pfs"
+        kwinrulesrc_path = "~/.config/kwinrulesrc"
+        kwinrulesrc_path = os.path.expanduser(kwinrulesrc_path) # expand "~"
+        config = configparser.ConfigParser()
+        config.optionxform = str # preserves the case
+        if os.path.exists(kwinrulesrc_path):
+            logger.debug(f"_enable_prevent_focus_stealing_kde: reading config file {kwinrulesrc_path!r}")
+            with open(kwinrulesrc_path) as fp:
+                config.read_string(fp.read())
+            logger.debug(f"_enable_prevent_focus_stealing_kde: reading config file done -> sections {config.sections()}")
+            # decode backslash-escapes: "\\\\" -> "\\"
+            # https://stackoverflow.com/a/69772725/10440128
+            for section in config.sections():
+                for key, val in config[section].items():
+                    config[section][key] = val.encode('raw_unicode_escape').decode('unicode_escape')
+            config_dict = {section: dict(config[section]) for section in config.sections()}
+            logger.debug(f"_enable_prevent_focus_stealing_kde: reading config file done -> config_str {json.dumps(config_dict, indent=2)}")
+        # TODO also handle forks of chromium
+        wmclass_regex = "chromium-browser \\(" + chromium_user_data_dir_regex + "\\) Chromium-browser"
+        rule = {
+            "Description": "aiohttp_chromium: prevent focus stealing",
+            "clientmachine": "localhost",
+            "title": "", # actual window title. this is dynamic
+            "fsplevel": "4", # "extreme"
+            "fsplevelrule": "2",
+            "types": "1",
+            "windowrole": "browser",
+            "windowrolematch": "1",
+            "wmclass": wmclass_regex,
+            "wmclasscomplete": "true",
+            "wmclassmatch": "3", # regex
+        }
+        # check if rule exists
+        for rule_id in config.sections():
+            if rule_id == "General": continue
+            existing_rule = config[rule_id]
+            found_rule = False
+            for key, val in rule.items():
+                existing_val = existing_rule.get(key)
+                if existing_val == val:
+                    found_rule = True
+                else:
+                    # logger.debug(f"_enable_prevent_focus_stealing_kde: rules mismatch on key {key}: {val!r} != {existing_val!r}")
+                    found_rule = False
+                    break
+            if found_rule:
+                logger.debug(f"_enable_prevent_focus_stealing_kde: found existing rule {json.dumps(dict(existing_rule), indent=2)}")
+                return
+        # TODO dont add General section?
+        # the General section can be removed by KDE...
+        if not "General" in config:
+            # init config (or fix broken config)
+            rule_count = len(config.sections())
+            rule_ids = ",".join(config.sections())
+            section_key = "General"
+            config.add_section(section_key)
+            # TODO? use config.set("General", "count", "0")
+            section = config._sections.pop(section_key)
+            section["count"] = str(rule_count)
+            section["rules"] = rule_ids
+            logger.debug(f"_enable_prevent_focus_stealing_kde: adding General section {json.dumps(dict(section), indent=2)}")
+            # move section to top
+            config._sections = OrderedDict(
+                [(section_key, section)] + list(config._sections.items())
+            )
+            logger.debug(f"_enable_prevent_focus_stealing_kde: adding General section done -> sections {config.sections()}")
+
+        # add rule
+        logger.debug(f"_enable_prevent_focus_stealing_kde: adding rule {json.dumps(dict(rule), indent=2)}")
+        config["General"]["count"] = str(int(config["General"].get("count", 0)) + 1)
+        rule_uuid = str(uuid.uuid4())
+        config["General"]["rules"] = ",".join(config["General"].get("rules", "").split(",") + [rule_uuid])
+        # rule = {key: str(val) for key, val in rule.items()} # option values must be strings
+        config[rule_uuid] = rule
+        logger.debug(f"_enable_prevent_focus_stealing_kde: adding rule done -> sections {config.sections()}")
+        # config_dict = {section: dict(config[section]) for section in config.sections()}
+        # logger.debug(f"_enable_prevent_focus_stealing_kde: adding rule done -> config {json.dumps(config_dict, indent=2)}")
+        # encode backslash-escapes: "\\" -> "\\\\"
+        # https://stackoverflow.com/a/69772725/10440128
+        # fix: escaped regex parens in rule["wmclass"] are lost: "\\(" and "\\)" are written as "\\"
+        for section in config.sections():
+            for key, val in config[section].items():
+                config[section][key] = val.encode('unicode_escape').decode('raw_unicode_escape')
+        logger.debug(f"_enable_prevent_focus_stealing_kde: writing config file {kwinrulesrc_path!r}")
+        os.makedirs(os.path.dirname(kwinrulesrc_path), exist_ok=True)
+        with open(kwinrulesrc_path, "w") as fp:
+            config.write(fp, space_around_delimiters=False)
+        with open(kwinrulesrc_path) as fp:
+            config_str = fp.read()
+        logger.debug(f"_enable_prevent_focus_stealing_kde: writing config file done -> config_str:\n{config_str}")
+        # reload rules
+        args = "qdbus org.kde.KWin /KWin reconfigure".split()
+        logger.debug(f"_enable_prevent_focus_stealing_kde: reloading rules: {shlex.join(args)}")
+        subprocess.run(args)
+        with open(kwinrulesrc_path) as fp:
+            config_str = fp.read()
+        logger.debug(f"_enable_prevent_focus_stealing_kde: reloading rules done -> config_str:\n{config_str}")
 
 
 
@@ -2002,7 +2155,7 @@ class ClientSession(aiohttp.ClientSession):
             logger.debug(f'ClientSession.close: removing temp path: {temp_path}')
             try:
                 # FIXME OSError: [Errno 39] Directory not empty: 'Default'
-                # removing temp path: /run/user/1000/asdf/chromium-user-data
+                # removing temp path: /run/user/1000/asdf/aiohttp-chromium-user-data
                 shutil.rmtree(temp_path)
             except NotADirectoryError:
                 os.unlink(temp_path)
