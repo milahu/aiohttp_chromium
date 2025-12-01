@@ -1905,10 +1905,13 @@ class ClientSession(aiohttp.ClientSession):
         # ...
         # NOTE downloadWillBegin can come before responseReceived
 
+        # increase maximum buffer size to 1.2GB
+        # fix: Request content was evicted from inspector cache
+        max_buffer_size = 1_200_000_000
         args = {
-            "maxTotalBufferSize": 1_000_000,  # 1GB
-            "maxResourceBufferSize": 1_000_000,
-            "maxPostDataSize": 1_000_000
+            "maxTotalBufferSize": max_buffer_size,
+            "maxResourceBufferSize": max_buffer_size,
+            "maxPostDataSize": max_buffer_size,
         }
         await target.execute_cdp_cmd("Network.enable", args)
 
