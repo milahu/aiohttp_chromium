@@ -566,10 +566,20 @@ class ClientResponse(aiohttp.client_reqrep.ClientResponse):
         if not self._filepath:
             return
 
-        # FIXME filesize can be unknown: self._filesize == None
-        assert self._filesize != None
-
         t1 = time.time()
+
+        if self._filesize is None:
+            while True:
+                # tmp_path = self._filepath + ".crdownload"
+                if os.path.exists(self._filepath):
+                    return
+                if timeout != None:
+                    t2 = time.time()
+                    dt = t2 - t1
+                    if dt > timeout:
+                        raise TimeoutError
+                sleep_step = 1 # TODO expose
+                await asyncio.sleep(sleep_step)
 
         while True:
             try:
