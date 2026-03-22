@@ -1478,14 +1478,22 @@ class ClientSession(aiohttp.ClientSession):
         # https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-navigate
 
         expected_request_id = None
+        expected_frame_id = None
+        # async def frameNavigated
+        main_frame_id = None
+        current_loader_id = None
+        final_url = None
+        last_navigation_ts = None
 
         request_url_by_id = dict()
 
         async def requestWillBeSent(args):
             nonlocal expected_request_id
+            nonlocal expected_frame_id
             request_url = args["request"]["url"]
             # TODO use request_id for logging
             request_id = args["requestId"]
+            frame_id = args["frameId"]
             request_url_by_id[request_id] = request_url
             if expected_request_id:
                 # filter by request_id
@@ -1505,6 +1513,7 @@ class ClientSession(aiohttp.ClientSession):
                 # set this only here
                 # request_id stays constant over redirects
                 expected_request_id = request_id
+                expected_frame_id = frame_id
             # TODO? wait until all requests have a response
             # aka "networkIdle"
             #return
@@ -1548,8 +1557,14 @@ class ClientSession(aiohttp.ClientSession):
 
             return False
 
+        document_responses = {}  # loaderId -> requestId
+        response_data_by_loader_id = {}  # loaderId -> args
+
         async def responseReceived(args):
             nonlocal url
+            nonlocal expected_request_id
+            nonlocal expected_frame_id
+            nonlocal expected_url
             nonlocal response_data
             nonlocal download_data
             #nonlocal response_body
@@ -1562,10 +1577,48 @@ class ClientSession(aiohttp.ClientSession):
                 # this should never happen
                 raise Exception(f"responseReceived: args == None")
 
+            # if expected_frame_id is None:
+            #     if args['response']['url'] == "https://www.opensubtitles.com/en":
+            #         expected_frame_id = args["frameId"]
+
             #logger.debug(f"responseReceived {json.dumps(args, indent=2)}")
             response_url = args["response"]["url"]
             response_status = args["response"]["status"]
             request_id = args["requestId"]
+            frame_id = args["frameId"]
+            loader_id = args["loaderId"]
+
+            if args["type"] != "Document":
+                return
+
+            document_responses[loader_id] = request_id
+            response_data_by_loader_id[loader_id] = args
+
+            # handle response in frameNavigated
+            return
+
+            # logger.debug(f"responseReceived Document response: loader={loader_id} request={request_id} url={response_url}")
+
+            # logger.debug(f"responseReceived {request_id} Network.getResponseBody navigation_done.wait ...")
+            # await navigation_done.wait()
+            # logger.debug(f"responseReceived {request_id} Network.getResponseBody navigation_done.wait done")
+            # # frameNavigated Main-frame navigation
+
+            # if 0:
+            # if args['response']['mimeType'] == "text/html" and not "/assets/" in args['response']['url']:
+            if response_url == "https://www.opensubtitles.com/en" and frame_id == expected_frame_id:
+                logger.debug(f"responseReceived -------------------------------------------------")
+                logger.debug(f"responseReceived expected_request_id = {expected_request_id}")
+                logger.debug(f"responseReceived args.requestId = {args['requestId']}")
+                logger.debug(f"responseReceived args.loaderId = {args['loaderId']}")
+                logger.debug(f"responseReceived args.frameId = {args['frameId']}")
+                logger.debug(f"responseReceived args.response.url = {args['response']['url']}")
+                logger.debug(f"responseReceived args.response.mimeType = {args['response']['mimeType']}")
+                logger.debug(f"responseReceived args.response.status = {args['response']['status']}")
+
+            # if request_id != expected_request_id and (response_url != url or frame_id != expected_frame_id):
+            # TODO what if response_url changes
+            # if not (request_id == expected_request_id or (response_url == url and frame_id == expected_frame_id)):
             if request_id != expected_request_id:
                 if self._debug2:
                     logger.debug(f"responseReceived {request_id} ignoring response {response_status}")
@@ -1638,19 +1691,25 @@ class ClientSession(aiohttp.ClientSession):
             #else:
             # response is inline content (html, txt, jpg, ...)
             #logger.debug(f"responseReceived {request_id} response is visible page")
-            logger.debug(f"responseReceived {request_id} Network.getResponseBody sleep")
+            # logger.debug(f"responseReceived {request_id} Network.getResponseBody sleep")
 
             # TODO better
             # fix: No data found for resource with given identifier
-            await asyncio.sleep(2)
+            # await asyncio.sleep(2)
+
+            # logger.debug(f"responseReceived {request_id} Network.getResponseBody navigation_done.wait ...")
+            # await navigation_done.wait()
+            # logger.debug(f"responseReceived {request_id} Network.getResponseBody navigation_done.wait done")
+            # # frameNavigated Main-frame navigation
 
             # FIXME this can hang, producing a TimeoutError
             # better use Network.takeResponseBodyForInterceptionAsStream
             # instead of Network.getResponseBody
+            # FIXME cdp_socket.exceptions.CDPError: {'code': -32000, 'message': 'Request content was evicted from inspector cache'}
 
             logger.debug(f"responseReceived {request_id} Network.getResponseBody ...")
             args = {
-                "requestId": args["requestId"],
+                "requestId": request_id,
             }
             res = await target.execute_cdp_cmd("Network.getResponseBody", args)
             logger.debug(f"responseReceived {request_id} Network.getResponseBody done")
@@ -1674,6 +1733,7 @@ class ClientSession(aiohttp.ClientSession):
             # FIXME the responseReceivedExtraInfo can be missing
             # so dont use this to modify expected_url
             nonlocal expected_request_id
+            nonlocal expected_frame_id
             nonlocal expected_url
             request_id = args["requestId"]
             # FIXME how dow we know request_url_by_id[request_id]
@@ -1681,14 +1741,20 @@ class ClientSession(aiohttp.ClientSession):
             # but url can be missing!
             request_url = request_url_by_id.get(request_id)
             if request_id != expected_request_id:
+                # if request_url == "https://www.opensubtitles.com/en" or "location" in args["headers"]:
+                #     logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} ignoring {json.dumps(args, indent=2)}")
                 return
             #logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
+            # if request_url == "https://www.opensubtitles.com/en":
+            #     logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} {json.dumps(args, indent=2)}")
             logger.debug(f"responseReceivedExtraInfo {request_id} {request_url}")
             # TODO are these dict keys always lowercase?
+            # NOTE this no longer works with javascript redirects from cloudflare
             location = args["headers"].get("location")
             if location:
                 # TODO populate response.history = list of intermediary responses
                 new_expected_url = str(URL(expected_url).join(URL(location)))
+                logger.debug(f"responseReceivedExtraInfo {request_id} {request_url} new_expected_url {new_expected_url}")
 
                 # quickfix: upgrade redirect to https
                 # see also doc/redirect-http-https.txt
@@ -1905,6 +1971,88 @@ class ClientSession(aiohttp.ClientSession):
         # ...
         # NOTE downloadWillBegin can come before responseReceived
 
+        navigation_done = asyncio.Event()
+
+        # trace page events
+        await target.execute_cdp_cmd("Page.enable", {})
+        await target.execute_cdp_cmd("Page.setLifecycleEventsEnabled", {"enabled": True})
+
+        async def frameNavigated(args):
+            nonlocal main_frame_id, current_loader_id, final_url, last_navigation_ts
+            # logger.debug(f"frameNavigated {json.dumps(args, indent=2)}")
+            frame = args["frame"]
+            # Only care about the main frame
+            if frame.get("parentId") is not None:
+                return
+            main_frame_id = frame["id"]
+            current_loader_id = frame["loaderId"]
+            request_id = document_responses.get(current_loader_id)
+            last_navigation_ts = time.monotonic()
+            final_url = frame["url"].split("#", 1)[0]
+            logger.debug(f"frameNavigated {request_id} navigation done: url={final_url}, loader={current_loader_id}")
+            navigation_done.set()
+
+            response_data = response_data_by_loader_id.get(current_loader_id)
+
+            # logger.debug(f"frameNavigated {request_id} Network.getResponseBody sleep")
+            # await asyncio.sleep(2)
+
+            logger.debug(f"frameNavigated {request_id} Network.getResponseBody ...")
+            args = {
+                "requestId": request_id,
+            }
+            # FIXME cdp_socket.exceptions.CDPError: {'code': -32000, 'message': 'No data found for resource with given identifier'}
+            # FIXME cdp_socket.exceptions.CDPError: {'code': -32000, 'message': 'Request content was evicted from inspector cache'}
+            res = await target.execute_cdp_cmd("Network.getResponseBody", args)
+            logger.debug(f"frameNavigated {request_id} Network.getResponseBody done")
+            response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
+            #logger.debug(f"len(response_body): {len(response_body)}")
+
+            response_filename = None
+            #response_filepath = None
+            response_guid = None
+
+            # TODO better?
+            #response_item = (response_data, response_body, response_filename, response_filepath)
+            response_item = (response_data, response_body, response_filename, response_guid)
+
+            response_done = True
+
+            logger.debug(f"frameNavigated {request_id} response_queue.put")
+            await response_queue.put(response_item)
+
+        await target.add_cdp_listener("Page.frameNavigated", frameNavigated)
+
+        # TODO? remove lifecycleEvent in favor of frameNavigated. no url in args
+        async def lifecycleEvent(args):
+            # logger.debug(f"lifecycleEvent {json.dumps(args, indent=2)}")
+            if not (
+                args["frameId"] == main_frame_id
+                and args["loaderId"] == current_loader_id
+                and args["name"] == "networkIdle"
+            ):
+                return
+            frame_id = args["frameId"]
+            loader_id = args["loaderId"]
+            event_name = args["name"]
+
+            # final_request_id
+            request_id = document_responses.get(current_loader_id)
+            # request_args = document_request_args.get(current_loader_id)
+
+            if not request_id:
+                raise RuntimeError("No final document response found")
+
+            # logger.debug(f"lifecycleEvent {request_id} {json.dumps(args, indent=2)}")
+            final_url = None # ?
+            logger.debug(f"lifecycleEvent {request_id} navigation done: frame={frame_id}, loader={loader_id}")
+            navigation_done.set()
+            return
+
+            # Page.frameNavigated
+
+        await target.add_cdp_listener("Page.lifecycleEvent", lifecycleEvent)
+
         args = {
             "maxTotalBufferSize": 1_000_000,  # 1GB
             "maxResourceBufferSize": 1_000_000,
@@ -2018,6 +2166,43 @@ class ClientSession(aiohttp.ClientSession):
 
             raise
 
+        if 0:
+
+            await navigation_done.wait()
+
+            # final_request_id
+            request_id = document_responses.get(current_loader_id)
+
+            if not request_id:
+                raise RuntimeError("No final document response found")
+
+            # Page.frameNavigated
+
+            # response_data = args # TODO args?
+            response_data = None
+
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody ...")
+            args = {
+                "requestId": request_id,
+            }
+            res = await target.execute_cdp_cmd("Network.getResponseBody", args)
+            logger.debug(f"responseReceived {request_id} Network.getResponseBody done")
+            response_body = base64.b64decode(res["body"]) if res["base64Encoded"] else res["body"]
+            #logger.debug(f"len(response_body): {len(response_body)}")
+
+            response_filename = None
+            #response_filepath = None
+            response_guid = None
+
+            # TODO better?
+            #response_item = (response_data, response_body, response_filename, response_filepath)
+            response_item = (response_data, response_body, response_filename, response_guid)
+
+            logger.debug(f"responseReceived {request_id} response_queue.put")
+            await response_queue.put(response_item)
+
+
+
         # removed: try
         if True:
 
@@ -2035,6 +2220,8 @@ class ClientSession(aiohttp.ClientSession):
 
                     #await response_ready.wait()
                     response_item = await response_queue.get()
+
+                    logger.debug(f"_request: response_queue.get done")
 
                     # TODO better?
                     (response_data, response_body, response_filename, response_guid) = response_item
@@ -2055,6 +2242,7 @@ class ClientSession(aiohttp.ClientSession):
                     # TODO test: allow_redirects == False
 
                     # found a "good" response
+                    logger.debug(f"_request: status {resp_status}: title {title} -> found a good response")
                     break
 
 
